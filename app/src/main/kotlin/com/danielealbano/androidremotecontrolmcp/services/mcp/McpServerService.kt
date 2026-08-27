@@ -203,6 +203,7 @@ class McpServerService : Service() {
     private var mcpServer: McpServer? = null
     private var tunnelObserverJob: Job? = null
     private var approvalObserverJob: Job? = null
+    private var restartAfterTunnelFailure = false
 
     /**
      * Tracks whether the LAST [onStartCommand] action was an explicit stop. Lets [onDestroy] re-commit
@@ -234,7 +235,10 @@ class McpServerService : Service() {
                 return START_NOT_STICKY
             }
 
-            ACTION_START, null -> {
+            ACTION_START, ACTION_RECOVER_TUNNEL, null -> {
+                if (intent?.action != ACTION_RECOVER_TUNNEL) {
+                    tunnelRecoveryRestartUsed.set(false)
+                }
                 lastIntentWasStop = false
                 persistServerRunning(settingsRepository, true)
                 if (!serverActive.compareAndSet(false, true)) {
@@ -396,7 +400,14 @@ class McpServerService : Service() {
                             }
 
                             is TunnelStatus.Error -> {
-                                Log.w(TAG, "Tunnel error: ${status.message}")
+                                handleTunnelError(
+                                    status,
+                                    serverLogRepository,
+                                    tunnelRecoveryRestartUsed,
+                                ) {
+                                    restartAfterTunnelFailure = true
+                                    stopSelf()
+                                }
                             }
 
                             is TunnelStatus.Connecting -> {
@@ -634,6 +645,10 @@ class McpServerService : Service() {
         updateStatus(ServerStatus.Stopped)
         Log.i(TAG, "McpServerService destroyed")
 
+        if (restartAfterTunnelFailure) {
+            scheduleMcpServerRestartAfterTunnelFailure(applicationContext)
+        }
+
         super.onDestroy()
     }
 
@@ -666,6 +681,8 @@ class McpServerService : Service() {
         private const val TAG = "MCP:ServerService"
         const val ACTION_START = "com.danielealbano.androidremotecontrolmcp.ACTION_START_MCP_SERVER"
         const val ACTION_STOP = "com.danielealbano.androidremotecontrolmcp.ACTION_STOP_MCP_SERVER"
+        const val ACTION_RECOVER_TUNNEL =
+            "com.danielealbano.androidremotecontrolmcp.ACTION_RECOVER_MCP_TUNNEL"
         const val NOTIFICATION_ID = 1001
         const val SHUTDOWN_GRACE_PERIOD_MS = 1000L
         const val SHUTDOWN_TIMEOUT_MS = 5000L
@@ -678,11 +695,27 @@ class McpServerService : Service() {
          */
         private val _serverStatus = MutableStateFlow<ServerStatus>(ServerStatus.Stopped)
         val serverStatus: StateFlow<ServerStatus> = _serverStatus.asStateFlow()
+        private val tunnelRecoveryRestartUsed = AtomicBoolean(false)
 
         @Volatile
         var instance: McpServerService? = null
             private set
     }
+}
+
+private fun handleTunnelError(
+    status: TunnelStatus.Error,
+    serverLogRepository: ServerLogRepository,
+    restartUsed: AtomicBoolean,
+    restartService: () -> Unit,
+) {
+    Log.w("MCP:ServerService", "Tunnel error: ${status.message}")
+    if (!status.recoveryExhausted || !restartUsed.compareAndSet(false, true)) return
+    serverLogRepository.log(
+        ServerLogEntry.Type.TUNNEL,
+        "Tunnel recovery exhausted; restarting MCP service once",
+    )
+    restartService()
 }
 
 /** Builds the HTTPS [HttpsMaterial] when both the keystore and its password are present, else null. */

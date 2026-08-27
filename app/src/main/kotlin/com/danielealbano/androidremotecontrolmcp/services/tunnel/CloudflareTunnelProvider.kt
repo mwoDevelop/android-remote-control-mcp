@@ -58,13 +58,21 @@ class CloudflareTunnelProvider
         private var process: Process? = null
         private var stderrReaderJob: Job? = null
         private var processMonitorJob: Job? = null
+        private var restartEnabled = false
+        private var restartSpec: RestartSpec? = null
+        private var consecutiveFailures = 0
+
+        @Volatile
+        private var lastDiagnosticLine: String? = null
 
         override suspend fun start(
             localPort: Int,
             config: ServerConfig,
         ) {
             mutex.withLock {
-                check(process == null) { "Tunnel is already running" }
+                check(process == null && !restartEnabled) { "Tunnel is already running" }
+                consecutiveFailures = 0
+                lastDiagnosticLine = null
 
                 val binaryPath =
                     binaryResolver.resolve() ?: run {
@@ -75,6 +83,10 @@ class CloudflareTunnelProvider
                 when (config.cloudflareTunnelMode) {
                     CloudflareTunnelMode.FREE -> startFreeTunnel(binaryPath, localPort, config)
                     CloudflareTunnelMode.TOKEN -> startTokenTunnel(binaryPath, localPort, config)
+                }
+                if (process != null) {
+                    restartSpec = RestartSpec(binaryPath, localPort, config)
+                    restartEnabled = true
                 }
             }
         }
@@ -146,18 +158,19 @@ class CloudflareTunnelProvider
                         "--output",
                         "json",
                         "run",
-                        "--token",
-                        config.cloudflareTunnelToken,
                     )
                 if (config.cloudflareTunnelExtraArgs.isNotBlank()) {
                     args.addAll(parseCommandLineArguments(config.cloudflareTunnelExtraArgs))
                 }
                 val pb = ProcessBuilder(args)
+                // Keep the credential out of argv (/proc and process listings). cloudflared maps
+                // this environment variable to the same option as --token.
+                pb.environment()[TUNNEL_TOKEN_ENV] = config.cloudflareTunnelToken
                 pb.redirectErrorStream(false)
                 val proc = pb.start()
                 process = proc
 
-                launchStderrReader(proc) { line -> handleTokenLine(line, localPort) }
+                launchStderrReader(proc, config.cloudflareTunnelToken) { line -> handleTokenLine(line, localPort) }
                 startProcessMonitor(proc)
             } catch (
                 @Suppress("TooGenericExceptionCaught") e: Exception,
@@ -210,17 +223,22 @@ class CloudflareTunnelProvider
 
         override suspend fun stop() {
             mutex.withLock {
-                val proc = process ?: return
+                restartEnabled = false
+                restartSpec = null
+                consecutiveFailures = 0
+                lastDiagnosticLine = null
                 stderrReaderJob?.cancel()
                 stderrReaderJob = null
                 processMonitorJob?.cancel()
                 processMonitorJob = null
 
-                proc.destroy()
-                withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) {
-                    @Suppress("BlockingMethodInNonBlockingContext")
-                    proc.waitFor()
-                } ?: proc.destroyForcibly()
+                process?.let { proc ->
+                    proc.destroy()
+                    withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) {
+                        @Suppress("BlockingMethodInNonBlockingContext")
+                        proc.waitFor()
+                    } ?: proc.destroyForcibly()
+                }
 
                 process = null
                 _status.value = TunnelStatus.Disconnected
@@ -234,6 +252,7 @@ class CloudflareTunnelProvider
          */
         private fun launchStderrReader(
             proc: Process,
+            secret: String = "",
             onLine: (String) -> Unit,
         ) {
             stderrReaderJob =
@@ -243,7 +262,9 @@ class CloudflareTunnelProvider
                             while (isActive) {
                                 @Suppress("BlockingMethodInNonBlockingContext")
                                 val line = reader.readLine() ?: break
-                                Log.d(TAG, "cloudflared: $line")
+                                val diagnostic = safeDiagnosticOf(line, secret)
+                                lastDiagnosticLine = diagnostic
+                                Log.d(TAG, "cloudflared: $diagnostic")
                                 onLine(line)
                             }
                         }
@@ -258,6 +279,7 @@ class CloudflareTunnelProvider
         }
 
         private fun startProcessMonitor(proc: Process) {
+            val startedAtNanos = System.nanoTime()
             processMonitorJob =
                 scope.launch {
                     // Give the process a moment to start before monitoring exit
@@ -265,19 +287,96 @@ class CloudflareTunnelProvider
 
                     @Suppress("BlockingMethodInNonBlockingContext")
                     val exitCode = proc.waitFor()
+                    val recovery = recoveryDecision(proc, startedAtNanos)
 
-                    if (isActive && _status.value !is TunnelStatus.Disconnected) {
-                        Log.w(TAG, "cloudflared process exited unexpectedly with code $exitCode")
-                        _status.value =
-                            TunnelStatus.Error(
-                                "cloudflared process exited unexpectedly (code $exitCode)",
-                            )
-                        mutex.withLock {
-                            process = null
-                        }
+                    if (isActive && recovery !is RecoveryDecision.Ignore) {
+                        handleUnexpectedExit(exitCode, recovery)
                     }
                 }
         }
+
+        private suspend fun recoveryDecision(
+            proc: Process,
+            startedAtNanos: Long,
+        ): RecoveryDecision =
+            mutex.withLock {
+                if (process !== proc || !restartEnabled) return@withLock RecoveryDecision.Ignore
+                process = null
+                val ranStably = System.nanoTime() - startedAtNanos >= STABLE_PROCESS_NANOS
+                consecutiveFailures = if (ranStably) 1 else consecutiveFailures + 1
+                if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    restartEnabled = false
+                    RecoveryDecision.Exhausted(consecutiveFailures)
+                } else {
+                    RecoveryDecision.Retry
+                }
+            }
+
+        private suspend fun handleUnexpectedExit(
+            exitCode: Int,
+            recovery: RecoveryDecision,
+        ) {
+            Log.w(TAG, "cloudflared process exited unexpectedly with code $exitCode")
+            val exhausted = recovery is RecoveryDecision.Exhausted
+            _status.value =
+                TunnelStatus.Error(
+                    message = unexpectedExitMessage(exitCode, lastDiagnosticLine),
+                    recoveryExhausted = exhausted,
+                )
+            if (exhausted) {
+                Log.e(TAG, "cloudflared recovery exhausted after ${recovery.attempts} failures")
+            } else {
+                retryCloudflared()
+            }
+        }
+
+        private suspend fun retryCloudflared() {
+            var retryDelayMs = RESTART_INITIAL_DELAY_MS
+            while (scope.isActive) {
+                Log.i(TAG, "Restarting cloudflared in ${retryDelayMs}ms")
+                delay(retryDelayMs)
+                if (restartFromSavedSpec()) return
+                val attempts = mutex.withLock { ++consecutiveFailures }
+                if (attempts >= MAX_CONSECUTIVE_FAILURES) {
+                    mutex.withLock { restartEnabled = false }
+                    _status.value =
+                        TunnelStatus.Error(
+                            message = "Unable to restart cloudflared after $attempts failures",
+                            recoveryExhausted = true,
+                        )
+                    return
+                }
+                retryDelayMs = (retryDelayMs * 2).coerceAtMost(RESTART_MAX_DELAY_MS)
+            }
+        }
+
+        private suspend fun restartFromSavedSpec(): Boolean =
+            mutex.withLock {
+                val spec = restartSpec
+                if (!restartEnabled || process != null || spec == null) return@withLock false
+                when (spec.config.cloudflareTunnelMode) {
+                    CloudflareTunnelMode.FREE -> startFreeTunnel(spec.binaryPath, spec.localPort, spec.config)
+                    CloudflareTunnelMode.TOKEN -> startTokenTunnel(spec.binaryPath, spec.localPort, spec.config)
+                }
+                if (process != null) Log.i(TAG, "cloudflared restarted after unexpected exit")
+                process != null
+            }
+
+        private sealed interface RecoveryDecision {
+            data object Ignore : RecoveryDecision
+
+            data object Retry : RecoveryDecision
+
+            data class Exhausted(
+                val attempts: Int,
+            ) : RecoveryDecision
+        }
+
+        private data class RestartSpec(
+            val binaryPath: String,
+            val localPort: Int,
+            val config: ServerConfig,
+        )
 
         /** A Cloudflare ingress rule that declares a public hostname. */
         internal data class IngressRoute(
@@ -291,9 +390,40 @@ class CloudflareTunnelProvider
                 Regex("https://[-a-zA-Z0-9]+\\.trycloudflare\\.com")
             internal const val SHUTDOWN_TIMEOUT_MS = 5_000L
             private const val PROCESS_MONITOR_INITIAL_DELAY_MS = 1_000L
+            private const val RESTART_INITIAL_DELAY_MS = 1_000L
+            private const val RESTART_MAX_DELAY_MS = 30_000L
+            private const val MAX_CONSECUTIVE_FAILURES = 5
+            private const val STABLE_PROCESS_NANOS = 60_000_000_000L
+            private const val MAX_DIAGNOSTIC_LENGTH = 300
+            internal const val TUNNEL_TOKEN_ENV = "TUNNEL_TOKEN"
             internal const val MSG_REGISTERED = "Registered tunnel connection"
             internal const val MSG_UPDATED_CONFIG = "Updated to new configuration"
             internal val LOG_JSON = Json { ignoreUnknownKeys = true }
+
+            /** Produces a bounded log summary while removing the configured tunnel credential. */
+            internal fun safeDiagnosticOf(
+                line: String,
+                secret: String,
+            ): String {
+                val usefulPart = logMessageOf(line) ?: line.trim()
+                val redacted =
+                    if (secret.isEmpty()) usefulPart else usefulPart.replace(secret, "[REDACTED]")
+                return redacted.take(MAX_DIAGNOSTIC_LENGTH)
+            }
+
+            internal fun unexpectedExitMessage(
+                exitCode: Int,
+                diagnostic: String?,
+            ): String =
+                buildString {
+                    append("cloudflared process exited unexpectedly (code ")
+                    append(exitCode)
+                    append(')')
+                    diagnostic?.takeIf { it.isNotBlank() }?.let {
+                        append("; last message: ")
+                        append(it)
+                    }
+                }
 
             /** Returns the top-level `message` field of a cloudflared JSON log line, or null for non-JSON. */
             internal fun logMessageOf(line: String): String? =

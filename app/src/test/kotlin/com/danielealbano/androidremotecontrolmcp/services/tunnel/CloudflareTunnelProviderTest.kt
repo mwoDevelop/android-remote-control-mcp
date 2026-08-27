@@ -230,14 +230,24 @@ class CloudflareTunnelProviderTest {
      * [argsFile], then blocks like the real long-running binary. The argv is written to a
      * temp file and atomically moved into place so readers never observe a partial write.
      */
-    private fun fakeBinaryRecordingArgs(argsFile: File): String {
+    private fun fakeBinaryRecordingArgs(
+        argsFile: File,
+        tokenEnvFile: File? = null,
+    ): String {
         val script = File.createTempFile("fake-cloudflared", ".sh")
         script.deleteOnExit()
         val target = argsFile.absolutePath
+        val tokenRecorder =
+            tokenEnvFile
+                ?.let {
+                    "printf '%s' \"\$${CloudflareTunnelProvider.TUNNEL_TOKEN_ENV}\" > \"${it.absolutePath}.tmp\"\n" +
+                        "mv \"${it.absolutePath}.tmp\" \"${it.absolutePath}\"\n"
+                }.orEmpty()
         script.writeText(
             "#!/bin/sh\n" +
                 "printf '%s\\n' \"\$@\" > \"$target.tmp\"\n" +
                 "mv \"$target.tmp\" \"$target\"\n" +
+                tokenRecorder +
                 "sleep 60\n",
         )
         script.setExecutable(true)
@@ -246,6 +256,11 @@ class CloudflareTunnelProviderTest {
 
     private fun newArgsFile(): File = File.createTempFile("cloudflared-argv", ".txt").also { it.deleteOnExit() }
 
+    private fun newTokenEnvFile(): File =
+        File
+            .createTempFile("cloudflared-token-env", ".txt")
+            .also { it.deleteOnExit() }
+
     private suspend fun awaitRecordedArgs(argsFile: File): List<String> {
         withTimeout(AWAIT_TIMEOUT_MS) {
             while (argsFile.length() == 0L) {
@@ -253,6 +268,44 @@ class CloudflareTunnelProviderTest {
             }
         }
         return argsFile.readLines()
+    }
+
+    private suspend fun awaitRecordedText(file: File): String {
+        withTimeout(AWAIT_TIMEOUT_MS) {
+            while (file.length() == 0L) {
+                delay(ARGS_POLL_INTERVAL_MS)
+            }
+        }
+        return file.readText()
+    }
+
+    private fun fakeBinaryFailingOnce(counterFile: File): String {
+        val script = File.createTempFile("fake-cloudflared-restart", ".sh")
+        script.deleteOnExit()
+        val counter = counterFile.absolutePath
+        script.writeText(
+            "#!/bin/sh\n" +
+                "count=0\n" +
+                "[ -s \"$counter\" ] && count=\$(cat \"$counter\")\n" +
+                "count=\$((count + 1))\n" +
+                "printf '%s' \"\$count\" > \"$counter\"\n" +
+                "if [ \"\$count\" -eq 1 ]; then exit 17; fi\n" +
+                "printf '%s\\n' '$registeredLine' >&2\n" +
+                "sleep 60\n",
+        )
+        script.setExecutable(true)
+        return script.absolutePath
+    }
+
+    private suspend fun awaitLaunchCount(
+        counterFile: File,
+        expected: Int,
+    ) {
+        withTimeout(AWAIT_TIMEOUT_MS) {
+            while (counterFile.readText().trim().toIntOrNull() != expected) {
+                delay(ARGS_POLL_INTERVAL_MS)
+            }
+        }
     }
 
     @Nested
@@ -269,6 +322,29 @@ class CloudflareTunnelProviderTest {
         @Test
         fun `logMessageOf returns null for non-json line`() {
             assertEquals(null, CloudflareTunnelProvider.logMessageOf(nonJsonLine))
+        }
+
+        @Test
+        fun `safe diagnostic extracts json message and redacts token from plain text`() {
+            assertEquals(
+                CloudflareTunnelProvider.MSG_REGISTERED,
+                CloudflareTunnelProvider.safeDiagnosticOf(registeredLine, "fake-token"),
+            )
+            assertEquals(
+                "authentication failed for [REDACTED]",
+                CloudflareTunnelProvider.safeDiagnosticOf(
+                    "authentication failed for fake-token",
+                    "fake-token",
+                ),
+            )
+        }
+
+        @Test
+        fun `unexpected exit message carries exit code and safe diagnostic`() {
+            assertEquals(
+                "cloudflared process exited unexpectedly (code 17); last message: network timeout",
+                CloudflareTunnelProvider.unexpectedExitMessage(17, "network timeout"),
+            )
         }
 
         @Test
@@ -444,6 +520,41 @@ class CloudflareTunnelProviderTest {
                 )
                 provider.stop()
             }
+
+        @Test
+        fun `unexpected process exit restarts tunnel`() =
+            runBlocking {
+                val counterFile = File.createTempFile("cloudflared-launch-count", ".txt")
+                counterFile.writeText("0")
+                counterFile.deleteOnExit()
+                every { mockBinaryResolver.resolve() } returns fakeBinaryFailingOnce(counterFile)
+                val provider = createProvider()
+
+                provider.start(8080, tokenConfig())
+                awaitLaunchCount(counterFile, 2)
+                val status = provider.awaitStatus { it is TunnelStatus.Connected }
+
+                assertTrue(status is TunnelStatus.Connected)
+                provider.stop()
+            }
+
+        @Test
+        fun `stop after unexpected exit cancels pending restart`() =
+            runBlocking {
+                val counterFile = File.createTempFile("cloudflared-stop-count", ".txt")
+                counterFile.writeText("0")
+                counterFile.deleteOnExit()
+                every { mockBinaryResolver.resolve() } returns fakeBinaryFailingOnce(counterFile)
+                val provider = createProvider()
+
+                provider.start(8080, tokenConfig())
+                provider.awaitStatus { it is TunnelStatus.Error }
+                provider.stop()
+                delay(STOP_RESTART_GUARD_DELAY_MS)
+
+                assertEquals(1, counterFile.readText().trim().toInt())
+                assertEquals(TunnelStatus.Disconnected, provider.status.value)
+            }
     }
 
     @Nested
@@ -539,7 +650,8 @@ class CloudflareTunnelProviderTest {
         fun `token mode appends extra args after fixed args`() =
             runBlocking {
                 val argsFile = newArgsFile()
-                every { mockBinaryResolver.resolve() } returns fakeBinaryRecordingArgs(argsFile)
+                val tokenEnvFile = newTokenEnvFile()
+                every { mockBinaryResolver.resolve() } returns fakeBinaryRecordingArgs(argsFile, tokenEnvFile)
                 val provider = createProvider()
 
                 provider.start(
@@ -556,8 +668,6 @@ class CloudflareTunnelProviderTest {
                         "--output",
                         "json",
                         "run",
-                        "--token",
-                        "fake-token",
                         "--edge",
                         "region1.v2.argotunnel.com:7844",
                         "--protocol",
@@ -565,6 +675,8 @@ class CloudflareTunnelProviderTest {
                     ),
                     argv,
                 )
+                assertEquals("fake-token", awaitRecordedText(tokenEnvFile))
+                assertFalse(argv.contains("fake-token"))
                 provider.stop()
             }
 
@@ -596,7 +708,7 @@ class CloudflareTunnelProviderTest {
                 val argv = awaitRecordedArgs(argsFile)
 
                 assertEquals(
-                    listOf("tunnel", "--output", "json", "run", "--token", "fake-token"),
+                    listOf("tunnel", "--output", "json", "run"),
                     argv,
                 )
                 provider.stop()
@@ -633,6 +745,7 @@ class CloudflareTunnelProviderTest {
     companion object {
         private const val AWAIT_TIMEOUT_MS = 10_000L
         private const val ARGS_POLL_INTERVAL_MS = 50L
+        private const val STOP_RESTART_GUARD_DELAY_MS = 1_500L
 
         /** True for a Connected status that already carries at least one endpoint (route applied). */
         private fun TunnelStatus.connectedWithEndpoints() = this is TunnelStatus.Connected && endpoints.isNotEmpty()

@@ -44,8 +44,11 @@ sealed class TunnelStatus {
      * Tunnel encountered an error.
      *
      * @property message A human-readable error description.
+     * @property recoveryExhausted True when provider-level recovery has been exhausted and the
+     *   owning service may perform its one-shot last-resort restart.
      */
     data class Error(
         val message: String,
+        val recoveryExhausted: Boolean = false,
     ) : TunnelStatus()
 }
