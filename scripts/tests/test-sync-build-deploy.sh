@@ -131,6 +131,44 @@ EOF
     bash -c "cd '$repo' && PATH='$fake_bin':\"\$PATH\" scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS]"
 }
 
+test_production_listener_safety() {
+  local output status
+  eval "$(sed -n '/^verify_loopback_binding() {/,/^}/p' "$SOURCE_SCRIPT")"
+  die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+  adb_target() {
+    case "$*" in
+      "shell ss -ltn") printf '%s\n' "$TEST_LISTENERS" ;;
+      "shell ip -o -4 addr show dev wlan0 scope global")
+        printf '12: wlan0 inet %s/24 brd 192.0.2.255 scope global wlan0\n' "$TEST_WIFI_IP"
+        ;;
+      *) return 99 ;;
+    esac
+  }
+  timeout() { [[ "$TEST_WIFI_OPEN" == true ]]; }
+
+  TEST_LISTENERS='LISTEN 0 128 [::ffff:127.0.0.1]:8080 *:*'
+  TEST_WIFI_IP='192.0.2.10'
+  TEST_WIFI_OPEN=false
+  output="$(verify_loopback_binding)"
+  [[ "$output" == *'Wi-Fi TCP port 8080 is closed'* ]]
+
+  TEST_LISTENERS='LISTEN 0 128 [::]:8080 *:*'
+  set +e
+  output="$( (verify_loopback_binding) 2>&1 )"
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$output" == *'exposed beyond loopback'* ]]
+
+  TEST_LISTENERS='LISTEN 0 128 127.0.0.1:8080 *:*'
+  TEST_WIFI_OPEN=true
+  set +e
+  output="$( (verify_loopback_binding) 2>&1 )"
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$output" == *'accepts TCP connections through the device Wi-Fi address'* ]]
+  pass "production listener accepts IPv6-mapped loopback and rejects wildcard or Wi-Fi exposure"
+}
+
 test_help
 test_unknown_flag
 test_sync_preview
@@ -139,5 +177,6 @@ test_wrong_upstream
 test_deploy_preview
 test_all_preview_has_no_sync
 test_ambiguous_adb
+test_production_listener_safety
 
 printf '1..%d\n' "$PASSED"

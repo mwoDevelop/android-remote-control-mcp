@@ -193,6 +193,14 @@ private fun ApplicationUninstallResult.toJson() =
 private const val SHIZUKU_RECOVERY_HINT =
     "Shizuku is unavailable. Start Shizuku and grant this application permission, then retry."
 
+/** Closed production surface. Adding a privileged tool requires an explicit security review and regression update. */
+internal val SHIZUKU_ADMIN_TOOL_NAMES =
+    setOf(
+        GetTopWindowAdminHandler.TOOL_NAME,
+        RequestShizukuPermissionAdminHandler.TOOL_NAME,
+        UninstallApplicationAdminHandler.TOOL_NAME,
+    )
+
 /** One conflict-minimizing seam used by the existing MCP server. */
 fun registerShizukuAdminTools(
     registrar: LoggedToolRegistrar,

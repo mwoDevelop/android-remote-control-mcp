@@ -94,6 +94,20 @@ for (const device of devices) {
   if (androidConfig.device?.alias !== device) {
     fail(`${device}/android/config.json device.alias must equal ${device}`);
   }
+
+  const applyScript = fs.readFileSync(path.join(deviceRoot, 'android/apply-config.sh'), 'utf8');
+  if (!applyScript.includes(`--es tool_permissions "'{\\"disabledTools\\":[],\\"disabledParams\\":{}}'"`)) {
+    fail(`${device}/android/apply-config.sh must use ToolPermissionsConfig JSON field names`);
+  }
+  if (!applyScript.includes(`--es cloudflare_tunnel_extra_args "''"`)) {
+    fail(`${device}/android/apply-config.sh must restore empty Cloudflare extra arguments explicitly`);
+  }
+  if (!applyScript.includes(`--es device_slug "''"`)) {
+    fail(`${device}/android/apply-config.sh must preserve the empty device slug through adb shell quoting`);
+  }
+  if (androidConfig.remote_access?.cloudflare?.extra_arguments !== '') {
+    fail(`${device}/android/config.json must not use the broken token-mode --edge workaround`);
+  }
 }
 
 if (!fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok/account.json')) ||
@@ -107,5 +121,8 @@ if (fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok'))) {
 if (!process.exitCode) {
   console.log('OK: [REDACTED_DEVICE_ALIAS] and [REDACTED_DEVICE_ALIAS] follow the same device-configuration contract.');
   console.log('OK: [REDACTED_DEVICE_ALIAS] has the optional ngrok extension; [REDACTED_DEVICE_ALIAS] is Cloudflare-only.');
+  console.log('OK: both devices restore tool permissions using application JSON field names.');
+  console.log('OK: both devices restore empty ADB string values without argument shifting.');
+  console.log('OK: neither device uses the broken token-mode --edge workaround.');
 }
 NODE
