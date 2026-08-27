@@ -17,11 +17,12 @@ import kotlinx.coroutines.withContext
  * [RequestBaseUrlElement] scoped to the `/mcp` route so MCP tool handlers can build absolute
  * links (e.g. ephemeral file links).
  *
- * The base-URL element is installed as a route-level interceptor on the same `/mcp` route node
- * the transport uses, so it is present only for requests dispatched to `/mcp` (the only route
- * whose handlers read [RequestBaseUrlElement]). Each stateless POST is a fresh, never-initialized
- * session, so the SDK dispatches tool-call handlers inline in the request coroutine — which is why
- * wrapping [proceed] in `withContext` correctly reaches the handler.
+ * The request context is installed as a route-level interceptor on the same `/mcp` route node the
+ * transport uses, so it is present only for requests dispatched to `/mcp`. The `Call` phase is
+ * intentional: [com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthPlugin] classifies the
+ * client immediately before it, and privileged handlers must see that result. Each stateless POST
+ * is a fresh, never-initialized session, so the SDK dispatches tool-call handlers inline in the
+ * request coroutine — which is why wrapping [proceed] in `withContext` reaches the handler.
  *
  * DNS-rebinding protection is disabled: requests arrive via a cloudflared/ngrok tunnel, so the
  * `Host` header is the tunnel hostname (not localhost) and the SDK's localhost-default validation
@@ -38,7 +39,7 @@ fun Application.installMcpStatelessTransport(
 ) {
     routing {
         route("/mcp") {
-            intercept(ApplicationCallPipeline.Plugins) {
+            intercept(ApplicationCallPipeline.Call) {
                 val authClientClass =
                     call.attributes.getOrNull(McpAuthClientClassAttribute) ?: McpAuthClientClass.UNKNOWN
                 withContext(
