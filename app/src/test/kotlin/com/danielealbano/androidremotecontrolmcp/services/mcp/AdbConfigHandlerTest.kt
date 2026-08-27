@@ -902,7 +902,14 @@ class AdbConfigHandlerTest {
                     createIntent(AdbConfigReceiver.ACTION_CONFIGURE) {
                         string(
                             AdbConfigHandler.EXTRA_OAUTH_CLIENT_REGISTRATIONS,
-                            """[{"client_id":"[REDACTED_OWNER_VALUE]","client_name":"ChatGPT","redirect_uris":["https://chatgpt.com/connector/oauth/example"],"application_type":"web"}]""",
+                            """
+                            [{
+                              "client_id":"[REDACTED_OWNER_VALUE]",
+                              "client_name":"ChatGPT",
+                              "redirect_uris":["https://chatgpt.com/connector/oauth/example"],
+                              "application_type":"web"
+                            }]
+                            """.trimIndent(),
                         )
                     }
 
@@ -928,7 +935,12 @@ class AdbConfigHandlerTest {
                     createIntent(AdbConfigReceiver.ACTION_CONFIGURE) {
                         string(
                             AdbConfigHandler.EXTRA_OAUTH_CLIENT_REGISTRATIONS,
-                            """[{"client_id":"[REDACTED_OWNER_VALUE]","redirect_uris":["https://evil.example/callback"]}]""",
+                            """
+                            [{
+                              "client_id":"[REDACTED_OWNER_VALUE]",
+                              "redirect_uris":["https://evil.example/callback"]
+                            }]
+                            """.trimIndent(),
                         )
                     }
 
