@@ -790,3 +790,129 @@ server remains running for the current boot on loopback port 8081. Reboot persis
 on this non-rooted device Shizuku still requires the documented manual startup gate after a reboot. Five canary-script
 contract tests and the focused Shizuku unit tests plus `assembleGmsDebug` pass with the provider present in the merged
 APK manifest.
+
+### RF-018 — Owner decision: no long-lived canary; deploy the reviewed tools directly to [REDACTED_DEVICE_ALIAS] production
+
+The owner confirmed on 2026-08-27 that this is a small, locally managed project and a separate canary phase would add
+process overhead without a useful risk reduction. RF-014–RF-017 remain the historical record of the completed debug
+technical proof, but their canary terminology no longer defines the rollout architecture. The debug package on port
+8081 is temporary test evidence, not a deployment tier, and MUST be removed after the production acceptance checks
+pass.
+
+**Binding amendment superseding the canary and UI promotion requirements in Fixed architecture, User Story 4,
+User Story 7, User Story 8.2, RF-014 and RF-015:**
+
+- [REDACTED_DEVICE_ALIAS] is the first and direct production target. There is no required canary environment or promotion step between
+  the completed debug proof and [REDACTED_DEVICE_ALIAS] production.
+- Register only the three already reviewed typed tools in the production release:
+  `admin_get_top_window`, `admin_request_shizuku_permission` and `admin_uninstall_app`. Remove the current
+  `BuildConfig.DEBUG` registration condition. Do not add `run_shell`, generic settings mutation, APK installation,
+  clear-data or any other broad privileged operation.
+- A new master switch and a dedicated administrator settings screen are optional future improvements, not release
+  gates for this owner-operated deployment. The existing per-tool `disabledTools` policy remains authoritative.
+  Privileged tools still require the primary administrator bearer, reject OAuth before backend invocation, enforce
+  the immutable protected-package policy and use the bounded application-owned Shizuku runner.
+- Use the existing production MCP service on loopback port 8080 and the existing [REDACTED_DEVICE_ALIAS] Cloudflare tunnel. Do not expose
+  port 8081, create another public endpoint or enable direct Wi-Fi access.
+- ChatGPT remains connected through OAuth and therefore cannot call privileged tools. Add or repair a separate local
+  Codex MCP connection using the synchronized production administrator bearer so the privileged tools can be used by
+  the local administrator.
+- Preserve all safety gates that still reduce material risk: owner-controlled signing, installed/candidate signature
+  comparison, configuration and secret recovery snapshot, explicit approval before any signature-mismatch uninstall,
+  restoration of Android/Qustodio/background permissions, Wi-Fi non-exposure, Cloudflare and ordinary-tool checks,
+  bearer success, OAuth denial, protected-package rejection, Shizuku binder recovery and screen-off/service-restart
+  verification.
+- After production passes, stop and uninstall the debug MCP package and remove its ADB port-8081 forward. This cleanup
+  does not remove Shizuku and does not alter the production app's data.
+- Shizuku startup after a phone reboot remains a documented manual administrator action on this non-rooted device.
+  The production MCP service and ordinary tools MUST continue to work while Shizuku is stopped, with privileged tools
+  returning a stable unavailable result.
+- [REDACTED_DEVICE_ALIAS] is a separate optional later deployment, not part of completing the [REDACTED_DEVICE_ALIAS] production task. It requires its own
+  signing and live checks but no [REDACTED_DEVICE_ALIAS] canary terminology or promotion ceremony.
+
+**Revised remaining critical path:**
+
+1. Remove the debug-only registration guard and verify the three typed tools are present in a release build only for
+   the primary bearer; rerun focused authorization, protected-package, bounded-runner, lint and release-build tests.
+2. Prepare the owner-signed production APK, compare its certificate with the installed production package and choose
+   either an in-place update or the already documented explicit one-time migration path.
+3. Capture the current [REDACTED_DEVICE_ALIAS] configuration/secrets recovery snapshot, synchronize the production bearer in the app and
+   ignored local configuration, and configure the local Codex MCP connection to send that bearer.
+4. Deploy directly to the production package, restore required Android/Qustodio/background settings and start the
+   existing loopback port-8080 service and Cloudflare tunnel.
+5. Run live acceptance: ordinary MCP plus ChatGPT OAuth, privileged bearer calls, OAuth denial, protected-package
+   rejection, no Wi-Fi listener, Cloudflare reachability, screen-off/service restart and Shizuku binder stop/start
+   recovery. Record reboot-time Shizuku startup as the remaining manual operational procedure.
+6. When every production gate is green, remove the debug package/port-8081 forward and update the final device and
+   maintenance documentation. Keep [REDACTED_DEVICE_ALIAS] explicitly `PENDING` unless separately requested.
+
+### RF-019 — Independent consistency review of the direct-production path
+
+An independent read-only review challenged RF-018 against the current signing configuration, deployment scripts,
+device snapshot, Codex configuration and live-verification coverage. The direct [REDACTED_DEVICE_ALIAS] production decision remains
+appropriate, but the following amendments are required before it can be reported `READY`.
+
+#### Signing, state loss and rollback boundaries
+
+- Commit this reviewed plan amendment separately, then keep implementation/documentation in a small follow-up commit.
+  Production deployment requires a clean `main` and records the exact source SHA; a dirty-tree version is not eligible.
+- Before changing the installed production package, prepare the owner keystore outside Git and an owner-signed
+  `gmsRelease`, extract the installed APK certificate, and archive the known-good installed APK with its SHA-256 and
+  certificate digest. Do not expose keystore paths, aliases or passwords in logs or tracked files.
+- Distinguish rollback before signing migration from rollback after it. Before migration, the installed upstream-signed
+  app can only accept the same signing identity. After migration, rollback MUST use an owner-signed earlier artifact.
+  Returning to the upstream-signed APK after a manual uninstall would require another uninstall and another data loss;
+  it is not a transparent rollback.
+- A signature-mismatch migration requires a separate explicit owner confirmation immediately before uninstall. The
+  confirmation states that app DataStore and package-owned data will be irreversibly removed. The automation remains
+  forbidden from running that uninstall.
+- `myconf/[REDACTED_DEVICE_ALIAS]/android/apply-config.sh` does not preserve the OAuth JWT secret, DCR client/token registry, SAF grants,
+  Restricted Settings, accessibility, notification access or the package-specific Shizuku grant. After a destructive
+  signing migration, explicitly repeat ChatGPT connector authorization/registration as needed and restore every Android,
+  Shizuku, Qustodio, battery/background and SAF permission before acceptance. A JSON snapshot alone is insufficient.
+
+#### Credentials and client separation
+
+- The production bearer is currently a known failed precondition: the ignored local snapshot was rejected with HTTP
+  401 and the existing `android_[REDACTED_DEVICE_ALIAS]` Codex entry uses OAuth. Synchronize one newly generated or verified bearer between
+  the ignored secret file and production app before cutover, then prove it locally through ADB forwarding and through
+  Cloudflare without printing it.
+- Preserve `android_[REDACTED_DEVICE_ALIAS]` as the ordinary OAuth connection. Add a separate `android_[REDACTED_DEVICE_ALIAS]_admin` Codex MCP entry whose
+  bearer is read from a dedicated environment variable supported by Codex configuration; never place the bearer value
+  in `config.toml`. Restart/reload Codex and prove that the administrator connection succeeds while OAuth remains denied
+  for the privileged handlers.
+
+#### Verification and fail-closed release surface
+
+- Removing the master opt-in is an explicit owner choice for exactly these three hard-coded handlers. Because an empty
+  `disabledTools` set enables newly registered tools, add a release regression asserting that the privileged registration
+  surface contains exactly `admin_get_top_window`, `admin_request_shizuku_permission` and `admin_uninstall_app`, and no
+  generic or future privileged operation. Per-tool `disabledTools` must still remove each handler when configured.
+- Apply the RF-017 IPv4/IPv6-mapped loopback normalization to the main production deployment verifier. Also perform an
+  actual bounded connection attempt to port 8080 through the device Wi-Fi address; checking only for wildcard listeners
+  does not prove Wi-Fi non-exposure.
+- `myconf/[REDACTED_DEVICE_ALIAS]/scripts/verify.sh --live` currently proves only endpoint status/discovery, not authenticated ordinary or
+  privileged tool behavior. Extend it or add a separate acceptance helper. It MUST NOT emit `READY` until it has recorded:
+  bearer success, ordinary OAuth/ChatGPT success, OAuth denial for an admin tool, top-window success, protected-package
+  rejection before backend, Cloudflare reachability, Wi-Fi non-exposure, Shizuku binder stop/start recovery,
+  screen-off survival and MCP service restart. Manual observations may be recorded explicitly, but may not be inferred.
+- When Shizuku is stopped, the production MCP server and ordinary tools must stay operational. On reboot, temporarily
+  change the Qustodio Shizuku rule to `Allow`, start Shizuku through its documented user-visible flow, confirm the MCP
+  package grant, restore the rule to `Blocked`, and verify that restoring the rule does not kill the already running
+  Shizuku service or revoke production MCP access.
+
+#### Documentation and debug cleanup
+
+- Before deployment, update `README.md`, `docs/PROJECT.md` and `myconf/[REDACTED_DEVICE_ALIAS]/README.md` so they no longer describe the UI,
+  master opt-in or a release-disabled Shizuku surface as current requirements. Preserve `shizuku-canary.md` as a clearly
+  labelled historical debug proof until cleanup is complete; do not present it as the production runbook.
+- After production is `READY`, clean up with explicit ADB operations: force-stop and uninstall
+  `com.danielealbano.androidremotecontrolmcp.gms.debug`, remove host forward `tcp:8081`, and verify both the package and
+  listener are absent. Do not attempt this through `admin_uninstall_app`, whose protected-package policy correctly blocks
+  all MCP variants.
+
+**Revised execution order:** commit RF-018/RF-019; enable the exact release surface and its regression; repair production
+loopback/acceptance checks; prepare signing and rollback artifacts; synchronize bearer and configure the separate Codex
+administrator connection; capture state and obtain any required migration confirmation; deploy/re-onboard; pass the full
+production acceptance; remove the debug package and finalize documentation. Lack of an authorized [REDACTED_DEVICE_ALIAS] ADB connection
+blocks only physical signing/deployment/acceptance work, not the local implementation and automated test phases.
