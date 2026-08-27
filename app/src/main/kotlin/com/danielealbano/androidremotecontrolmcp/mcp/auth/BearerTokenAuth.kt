@@ -96,6 +96,7 @@ val McpAuthPlugin =
         application.intercept(authPhase) {
             // Open server: neither method enabled.
             if (!bearerTokenEnabled && !oauthEnabled) {
+                context.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.OPEN)
                 return@intercept
             }
 
@@ -108,9 +109,11 @@ val McpAuthPlugin =
             }
             val requestPath = call.request.path()
             if (excludedPaths.any { requestPath == it }) {
+                call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.EXCLUDED)
                 return@intercept
             }
             if (excludedPathPrefixes.any { requestPath.startsWith(it) }) {
+                call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.EXCLUDED)
                 return@intercept
             }
 
@@ -125,6 +128,7 @@ val McpAuthPlugin =
 
             // Static bearer path.
             if (bearerTokenEnabled && expectedToken.isNotEmpty() && constantTimeEquals(expectedToken, providedToken)) {
+                call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.STATIC_BEARER)
                 return@intercept
             }
 
@@ -132,6 +136,7 @@ val McpAuthPlugin =
             if (oauthEnabled && validateOAuthToken != null &&
                 validateOAuthToken(providedToken, canonicalResource(baseUrlOf(call)))
             ) {
+                call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.OAUTH)
                 return@intercept
             }
 

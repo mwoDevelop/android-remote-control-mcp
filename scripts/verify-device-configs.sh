@@ -6,7 +6,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 DEVICES=([REDACTED_DEVICE_ALIAS] [REDACTED_DEVICE_ALIAS])
 
 for device in "${DEVICES[@]}"; do
-  "${REPO_ROOT}/${device}/scripts/verify.sh"
+  "${REPO_ROOT}/myconf/${device}/scripts/verify.sh"
 done
 
 REPO_ROOT="$REPO_ROOT" node <<'NODE'
@@ -64,7 +64,7 @@ function fail(message) {
 }
 
 for (const device of devices) {
-  const deviceRoot = path.join(root, device);
+  const deviceRoot = path.join(root, 'myconf', device);
   for (const relative of commonFiles) {
     if (!fs.existsSync(path.join(deviceRoot, relative))) {
       fail(`${device} is missing common file ${relative}`);
@@ -81,13 +81,26 @@ for (const device of devices) {
       fail(`${device}/${relative} is missing keys: ${missing.join(', ')}`);
     }
   }
+
+  const androidConfig = JSON.parse(
+    fs.readFileSync(path.join(deviceRoot, 'android/config.json'), 'utf8')
+  );
+  const identity = androidConfig.device?.deployment_identity;
+  for (const key of ['manufacturer', 'model', 'device']) {
+    if (typeof identity?.[key] !== 'string' || !identity[key].trim()) {
+      fail(`${device}/android/config.json has invalid device.deployment_identity.${key}`);
+    }
+  }
+  if (androidConfig.device?.alias !== device) {
+    fail(`${device}/android/config.json device.alias must equal ${device}`);
+  }
 }
 
-if (!fs.existsSync(path.join(root, '[REDACTED_DEVICE_ALIAS]/ngrok/account.json')) ||
-    !fs.existsSync(path.join(root, '[REDACTED_DEVICE_ALIAS]/ngrok/ngrok.yml'))) {
+if (!fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok/account.json')) ||
+    !fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok/ngrok.yml'))) {
   fail('[REDACTED_DEVICE_ALIAS] must retain its documented ngrok fallback files');
 }
-if (fs.existsSync(path.join(root, '[REDACTED_DEVICE_ALIAS]/ngrok'))) {
+if (fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok'))) {
   fail('[REDACTED_DEVICE_ALIAS] must remain Cloudflare-only and must not contain an ngrok directory');
 }
 

@@ -26,6 +26,12 @@ import com.danielealbano.androidremotecontrolmcp.mcp.oauth.AuthorizationCodeStor
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.JwtTokenService
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthApprovalCoordinator
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthServerDeps
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.GetTopWindowAdminHandler
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.PrivilegedToolAuthorizer
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.ProtectedPackagePolicy
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.RequestShizukuPermissionAdminHandler
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.UninstallApplicationAdminHandler
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.registerShizukuAdminTools
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.LoggedToolRegistrar
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.McpToolUtils
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.ReferenceCountedToolCallIndicator
@@ -78,6 +84,7 @@ import com.danielealbano.androidremotecontrolmcp.services.tunnel.TunnelManager
 import com.danielealbano.androidremotecontrolmcp.ui.MainActivity
 import com.danielealbano.androidremotecontrolmcp.utils.NetworkUtils
 import com.danielealbano.androidremotecontrolmcp.utils.PermissionUtils
+import com.mwodevelop.androidremotecontrol.shizukuadmin.PrivilegedAdminBackend
 import dagger.hilt.android.AndroidEntryPoint
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -182,6 +189,12 @@ class McpServerService : Service() {
     @Inject lateinit var pseudonymStore: PseudonymStore
 
     @Inject lateinit var nerCache: NerCache
+
+    @Inject lateinit var privilegedAdminBackend: PrivilegedAdminBackend
+
+    @Inject lateinit var privilegedToolAuthorizer: PrivilegedToolAuthorizer
+
+    @Inject lateinit var protectedPackagePolicy: ProtectedPackagePolicy
 
     /** Config of the currently running server; used to build capability-link base URLs. */
     @Volatile
@@ -469,6 +482,21 @@ class McpServerService : Service() {
         )
         registerLocationTools(registrar, locationProvider, privacyToolGate, toolNamePrefix, perms)
         registerSharingBundle(registrar, toolNamePrefix, perms, fileSizeLimitMb)
+        // First canary slice only: release registration waits for the persisted opt-in policy/UI.
+        if (com.danielealbano.androidremotecontrolmcp.BuildConfig.DEBUG) {
+            registerShizukuAdminTools(
+                registrar,
+                privilegedAdminBackend,
+                privilegedToolAuthorizer,
+                protectedPackagePolicy,
+                toolNamePrefix,
+                setOf(
+                    GetTopWindowAdminHandler.TOOL_NAME,
+                    RequestShizukuPermissionAdminHandler.TOOL_NAME,
+                    UninstallApplicationAdminHandler.TOOL_NAME,
+                ).filterTo(mutableSetOf(), perms::isToolEnabled),
+            )
+        }
     }
 
     private fun registerAccessibilityToolBundle(

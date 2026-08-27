@@ -2,6 +2,7 @@ package com.danielealbano.androidremotecontrolmcp.mcp.tools
 
 import com.danielealbano.androidremotecontrolmcp.data.model.ServerLogEntry
 import com.danielealbano.androidremotecontrolmcp.data.repository.ServerLogRepository
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.currentMcpAuthClientClass
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -11,6 +12,7 @@ import kotlin.coroutines.coroutineContext
 
 private const val NANOS_PER_MILLI = 1_000_000L
 private const val FAILED_MARKER = "failed"
+private const val CLIENT_CLASS_PREFIX = "client="
 
 /**
  * Wraps a tool handler so every invocation records a TOOL_CALL server-log entry: un-prefixed tool
@@ -24,10 +26,12 @@ internal fun loggedToolHandler(
     serverLog: ServerLogRepository,
     toolName: String,
     toolCallIndicator: ToolCallIndicator = ToolCallIndicator.NONE,
+    includeClientClass: Boolean = false,
     handler: suspend (CallToolRequest) -> CallToolResult,
 ): suspend (CallToolRequest) -> CallToolResult =
     { request ->
         val startNs = System.nanoTime()
+        val clientClass = currentMcpAuthClientClass().name.lowercase().takeIf { includeClientClass }
         var completed: CallToolResult? = null
         runCatching { toolCallIndicator.onToolCallStarted(toolName) }
         try {
@@ -42,7 +46,7 @@ internal fun loggedToolHandler(
                 result != null -> {
                     serverLog.log(
                         type = ServerLogEntry.Type.TOOL_CALL,
-                        message = if (result.isError == true) FAILED_MARKER else "",
+                        message = toolAuditMessage(result.isError == true, clientClass),
                         toolName = toolName,
                         durationMs = durationMs,
                     )
@@ -51,7 +55,7 @@ internal fun loggedToolHandler(
                 coroutineContext.isActive -> {
                     serverLog.log(
                         type = ServerLogEntry.Type.TOOL_CALL,
-                        message = FAILED_MARKER,
+                        message = toolAuditMessage(failed = true, clientClass),
                         toolName = toolName,
                         durationMs = durationMs,
                     )
@@ -59,6 +63,15 @@ internal fun loggedToolHandler(
             }
         }
     }
+
+private fun toolAuditMessage(
+    failed: Boolean,
+    clientClass: String?,
+): String =
+    listOfNotNull(
+        FAILED_MARKER.takeIf { failed },
+        clientClass?.let { "$CLIENT_CLASS_PREFIX$it" },
+    ).joinToString(" ")
 
 /**
  * Registers tools on [server], wrapping every handler with per-call TOOL_CALL logging.
@@ -80,7 +93,28 @@ class LoggedToolRegistrar(
         inputSchema: ToolSchema,
         handler: suspend (CallToolRequest) -> CallToolResult,
     ) {
-        val wrapped = loggedToolHandler(serverLog, toolName, toolCallIndicator, handler)
+        val wrapped = loggedToolHandler(serverLog, toolName, toolCallIndicator, handler = handler)
+        server.addTool(name = name, description = description, inputSchema = inputSchema) { request ->
+            wrapped(request)
+        }
+    }
+
+    /** Registers a privileged tool whose audit entry also records the non-secret client class. */
+    fun addPrivilegedTool(
+        toolName: String,
+        name: String,
+        description: String,
+        inputSchema: ToolSchema,
+        handler: suspend (CallToolRequest) -> CallToolResult,
+    ) {
+        val wrapped =
+            loggedToolHandler(
+                serverLog,
+                toolName,
+                toolCallIndicator,
+                includeClientClass = true,
+                handler = handler,
+            )
         server.addTool(name = name, description = description, inputSchema = inputSchema) { request ->
             wrapped(request)
         }

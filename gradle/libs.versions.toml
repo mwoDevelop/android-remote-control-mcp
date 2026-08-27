@@ -57,6 +57,7 @@ material = "1.14.0"
 
 # Accompanist
 accompanist = "0.37.3"
+shizuku = "13.1.5"
 
 # Testing
 junit = "6.1.3"
@@ -202,9 +203,12 @@ onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime
 onnxruntime-jvm = { group = "com.microsoft.onnxruntime", name = "onnxruntime", version.ref = "onnxruntime" }
 libphonenumber = { group = "com.googlecode.libphonenumber", name = "libphonenumber", version.ref = "libphonenumber" }
 javax-inject = { group = "javax.inject", name = "javax.inject", version = "1" }
+shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
+shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

@@ -60,6 +60,27 @@ The application is a **service-based Android app** that exposes an MCP server ov
 - **Features**: Server status display (running/stopped), start/stop MCP server toggle, configuration settings (binding address, port, bearer token, auto-start on boot, HTTPS toggle and certificate management, remote access tunnel toggle and provider selection), quick links (enable accessibility service), connection info display (with tunnel public URL when connected), server logs viewer (recent server events including MCP tool calls and tunnel events)
 - **Implementation**: Material Design 3 with dark mode support, Jetpack Compose, ViewModel for state management, observes service status via Flow/StateFlow
 
+#### 4. Optional Shizuku administration boundary
+
+- **Module**: `:shizuku-admin`, depending only on the exact official Shizuku API/provider and coroutines.
+- **Network boundary**: It opens no server or listening socket. The existing `McpServerService` remains the only MCP
+  transport and production devices bind it to `127.0.0.1:8080` behind their existing tunnels.
+- **Authorization boundary**: The transport propagates a non-secret request-scoped client class. Privileged handlers
+  accept only the configured primary bearer path; OAuth clients are denied before the backend is invoked.
+- **Current milestone**: Debug builds register bounded `admin_get_top_window`, the standard visible Shizuku permission
+  request and typed user-0 package uninstall canaries. Package uninstall is guarded by an immutable protected-package
+  policy and requires Package Manager's explicit `Success` result. Release builds contain the backend library but
+  expose no privileged MCP tool until the persisted opt-in policy and administrator UI are complete.
+- **Deliberate exclusions**: No generic shell tool, prefix allowlist, generic settings writer, APK staging, clear-data
+  action, root flow, second MCP stack, automated Shizuku start, or Qustodio mutation.
+- **Attribution**: The minimal reflective process-launch and parser approach is adapted from the reviewed Apache-2.0
+  `stixez/droid-mcp` commit recorded in `THIRD_PARTY_NOTICES.md`; its binary and Ktor graph are not packaged.
+
+The binding drains stdout/stderr concurrently, retains bounded output, destroys timed-out/cancelled processes, and
+keeps Shizuku readiness separate from MCP server readiness. Non-rooted devices require manual Shizuku reactivation
+after reboot. The full rollout and signing gates are specified in
+[`Plan 66`](plans/66_shizuku_privileged_admin_tools_and_device_delivery_20260827142719.md).
+
 ### Inter-Service Communication
 
 **Pattern**: Singleton + StateFlow

@@ -1,5 +1,8 @@
 package com.danielealbano.androidremotecontrolmcp.mcp
 
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClass
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassAttribute
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassElement
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -36,7 +39,12 @@ fun Application.installMcpStatelessTransport(
     routing {
         route("/mcp") {
             intercept(ApplicationCallPipeline.Plugins) {
-                withContext(RequestBaseUrlElement(effectiveBaseUrl(call, publicUrlOverride))) {
+                val authClientClass =
+                    call.attributes.getOrNull(McpAuthClientClassAttribute) ?: McpAuthClientClass.UNKNOWN
+                withContext(
+                    RequestBaseUrlElement(effectiveBaseUrl(call, publicUrlOverride)) +
+                        McpAuthClientClassElement(authClientClass),
+                ) {
                     proceed()
                 }
             }
