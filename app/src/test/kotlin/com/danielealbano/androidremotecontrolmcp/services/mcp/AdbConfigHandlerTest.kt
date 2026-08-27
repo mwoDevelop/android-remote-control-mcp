@@ -11,7 +11,9 @@ import com.danielealbano.androidremotecontrolmcp.data.model.ServerConfig
 import com.danielealbano.androidremotecontrolmcp.data.model.ServerLogEntry
 import com.danielealbano.androidremotecontrolmcp.data.model.ToolPermissionsConfig
 import com.danielealbano.androidremotecontrolmcp.data.model.TunnelProviderType
+import com.danielealbano.androidremotecontrolmcp.data.repository.OAuthClientRepository
 import com.danielealbano.androidremotecontrolmcp.data.repository.SettingsRepository
+import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthClient
 import com.danielealbano.androidremotecontrolmcp.services.storage.StorageLocationProvider
 import com.danielealbano.androidremotecontrolmcp.testutil.RecordingServerLogRepository
 import io.mockk.coEvery
@@ -41,6 +43,7 @@ import org.junit.jupiter.api.Test
 class AdbConfigHandlerTest {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var storageLocationProvider: StorageLocationProvider
+    private lateinit var oauthClientRepository: OAuthClientRepository
     private lateinit var handler: AdbConfigHandler
     private lateinit var context: Context
     private val serverLog = RecordingServerLogRepository()
@@ -102,9 +105,11 @@ class AdbConfigHandlerTest {
 
         storageLocationProvider = mockk(relaxUnitFun = true)
         coEvery { storageLocationProvider.isLocationAuthorized(any()) } returns false
+        oauthClientRepository = mockk(relaxUnitFun = true)
+        coEvery { oauthClientRepository.restoreRegistration(any()) } answers { firstArg() }
 
         context = mockk(relaxed = true)
-        handler = AdbConfigHandler(settingsRepository, storageLocationProvider, serverLog)
+        handler = AdbConfigHandler(settingsRepository, storageLocationProvider, serverLog, oauthClientRepository)
     }
 
     @AfterEach
@@ -932,6 +937,57 @@ class AdbConfigHandlerTest {
                 coVerify(exactly = 0) { settingsRepository.updateBearerToken(any()) }
                 verify(exactly = 0) { context.startForegroundService(any()) }
                 verify(exactly = 0) { context.startService(any()) }
+            }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // OAuth client registration restore
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("OAuth client registration restore")
+    inner class OAuthClientRegistrationRestoreTests {
+        @Test
+        @DisplayName("valid ADB payload restores the original ChatGPT client id")
+        fun validPayloadRestoresClient() =
+            runTest {
+                val intent =
+                    createIntent(AdbConfigReceiver.ACTION_CONFIGURE) {
+                        string(
+                            AdbConfigHandler.EXTRA_OAUTH_CLIENT_REGISTRATIONS,
+                            """[{"client_id":"[REDACTED_OWNER_VALUE]","client_name":"ChatGPT","redirect_uris":["https://chatgpt.com/connector/oauth/example"],"application_type":"web"}]""",
+                        )
+                    }
+
+                handler.handle(context, intent)
+
+                coVerify(exactly = 1) {
+                    oauthClientRepository.restoreRegistration(
+                        match<OAuthClient> {
+                            it.clientId == "[REDACTED_OWNER_VALUE]" &&
+                                it.clientName == "ChatGPT" &&
+                                it.redirectUris == listOf("https://chatgpt.com/connector/oauth/example") &&
+                                it.currentRefreshJti == null
+                        },
+                    )
+                }
+            }
+
+        @Test
+        @DisplayName("invalid redirect rejects the complete restore payload")
+        fun invalidRedirectRejectsPayload() =
+            runTest {
+                val intent =
+                    createIntent(AdbConfigReceiver.ACTION_CONFIGURE) {
+                        string(
+                            AdbConfigHandler.EXTRA_OAUTH_CLIENT_REGISTRATIONS,
+                            """[{"client_id":"[REDACTED_OWNER_VALUE]","redirect_uris":["https://evil.example/callback"]}]""",
+                        )
+                    }
+
+                handler.handle(context, intent)
+
+                coVerify(exactly = 0) { oauthClientRepository.restoreRegistration(any()) }
             }
     }
 

@@ -31,6 +31,13 @@ interface OAuthClientRepository {
         nowMs: Long,
     ): OAuthClient
 
+    /**
+     * Restores an externally persisted client registration with its original [OAuthClient.clientId].
+     * Callers must validate the identifier and redirect URIs before invoking this method. Existing
+     * registrations with the same ID are replaced, while all unrelated registrations are preserved.
+     */
+    suspend fun restoreRegistration(client: OAuthClient): OAuthClient
+
     /** Removes the client (its tokens stop validating immediately). */
     suspend fun revoke(clientId: String)
 
