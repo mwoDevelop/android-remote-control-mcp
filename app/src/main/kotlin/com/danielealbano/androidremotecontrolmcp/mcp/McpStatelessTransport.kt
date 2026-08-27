@@ -3,13 +3,16 @@ package com.danielealbano.androidremotecontrolmcp.mcp
 import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClass
 import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassAttribute
 import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassElement
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthPhase
 import io.ktor.server.application.Application
-import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.request.path
+import io.ktor.util.pipeline.PipelinePhase
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStatelessStreamableHttp
 import kotlinx.coroutines.withContext
+
+private val McpRequestContextPhase = PipelinePhase("McpRequestContext")
 
 /**
  * Installs the MCP stateless Streamable HTTP transport at `/mcp`, together with a per-request
@@ -18,11 +21,10 @@ import kotlinx.coroutines.withContext
  *
  * The request context is installed at the application level and filtered to `/mcp`. The SDK mounts
  * its own route node, so a sibling route-level interceptor would not reliably wrap the production
- * Netty handler. The `Call` phase is intentional:
- * [com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthPlugin] classifies the client
- * immediately before it, and privileged handlers must see that result. Each stateless POST is a
- * fresh, never-initialized session, so the SDK dispatches tool-call handlers inline in the request
- * coroutine — which is why wrapping [proceed] in `withContext` reaches the handler.
+ * Netty handler. [McpRequestContextPhase] is explicitly inserted after [McpAuthPhase] and before
+ * `Call`, so privileged handlers never observe a pre-authentication classification. Each stateless
+ * POST is a fresh, never-initialized session, so the SDK dispatches tool-call handlers inline in
+ * the request coroutine — which is why wrapping [proceed] in `withContext` reaches the handler.
  *
  * DNS-rebinding protection is disabled: requests arrive via a cloudflared/ngrok tunnel, so the
  * `Host` header is the tunnel hostname (not localhost) and the SDK's localhost-default validation
@@ -37,7 +39,8 @@ fun Application.installMcpStatelessTransport(
     publicUrlOverride: String = "",
     block: () -> Server,
 ) {
-    intercept(ApplicationCallPipeline.Call) {
+    insertPhaseAfter(McpAuthPhase, McpRequestContextPhase)
+    intercept(McpRequestContextPhase) {
         if (call.request.path() == "/mcp") {
             val authClientClass =
                 call.attributes.getOrNull(McpAuthClientClassAttribute) ?: McpAuthClientClass.UNKNOWN

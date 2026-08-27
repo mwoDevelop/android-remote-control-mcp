@@ -56,6 +56,9 @@ class McpAuthConfig {
     var onAuthFailure: ((remoteInfo: String) -> Unit)? = null
 }
 
+/** Stable pipeline phase used by request-scoped MCP context after authentication succeeds. */
+internal val McpAuthPhase = PipelinePhase("McpAuth")
+
 /**
  * Ktor Application-level plugin enforcing combined MCP authentication: static bearer token OR issued
  * OAuth access token (dual-accept). Open when both methods are disabled.
@@ -90,10 +93,9 @@ val McpAuthPlugin =
         // Insert a dedicated auth phase AFTER the (internal) Validators phase where the CORS plugin
         // lives since Ktor 3.5, so CORS answers preflights and decorates responses before auth runs.
         // `Call` is public and sits immediately after `Validators`, so inserting before it is safe.
-        val authPhase = PipelinePhase("McpAuth")
-        application.insertPhaseBefore(ApplicationCallPipeline.Call, authPhase)
+        application.insertPhaseBefore(ApplicationCallPipeline.Call, McpAuthPhase)
 
-        application.intercept(authPhase) {
+        application.intercept(McpAuthPhase) {
             // Open server: neither method enabled.
             if (!bearerTokenEnabled && !oauthEnabled) {
                 context.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.OPEN)
