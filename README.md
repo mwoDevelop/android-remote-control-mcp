@@ -19,6 +19,7 @@ The app runs directly on your Android device (or emulator) and exposes an HTTP s
 - [Setup](#setup)
 - [Privacy Mode](#privacy-mode)
 - [Integrations](#integrations)
+- [Managed Device Configurations](#managed-device-configurations)
 - [Configuration](#configuration)
 - [Permissions Reference](#permissions-reference)
 - [Security](#security)
@@ -212,6 +213,17 @@ the roadmap. Actual results vary with content and language.
 
 ## Integrations
 
+### Codex via Cloudflare Tunnel
+
+Codex CLI, the Codex IDE extension, and the ChatGPT desktop app can connect to
+the app's Streamable HTTP endpoint through a Cloudflare Tunnel. OAuth is the
+recommended authentication method because it creates a separate, revocable
+client without copying the app's bearer token into Codex configuration.
+
+See [Connect Codex through a Cloudflare Tunnel](docs/CODEX_INTEGRATION.md) for
+the complete OAuth setup, secure `config.toml` policy, bearer-token fallback,
+verification steps, and troubleshooting.
+
 ### Claude Desktop / Claude Code
 
 Add the server to your `.mcp.json` configuration file:
@@ -319,6 +331,44 @@ curl -X POST http://localhost:8080/mcp \
 Replace `SESSION_ID` with the `mcp-session-id` value from the initialize response headers.
 
 The bearer token is shown in the app's connection info and can be copied directly. Bearer authentication is controlled by the **Bearer token** toggle in **Settings → Access** (not by clearing the value): with it enabled, every `/mcp` request must present the token (or a valid OAuth access token). The server accepts unauthenticated requests only when **both** the Bearer token and OAuth are disabled.
+
+---
+
+## Managed Device Configurations
+
+This checkout contains reproducible local deployment snapshots for two Android devices. Both use the same directory contract and keep active credentials in a local `.env.secrets` file that is ignored by Git.
+
+| Device | Primary MCP endpoint | Remote-access policy | Captured provisioning state |
+|---|---|---|---|
+| [Xiaomi 11T (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational at the 2026-08-26 capture |
+| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `https://a34.[REDACTED_PRIVATE_HOST]/mcp` | Cloudflare only | Cloudflare provisioned; phone and ChatGPT connector pending at the 2026-08-26 capture |
+
+Each device directory contains the same common configuration areas:
+
+```text
+<device>/
+├── README.md
+├── snapshot.json
+├── .env.example
+├── .env.secrets              # local, mode 0600, ignored by Git
+├── android/
+│   ├── config.json
+│   └── apply-config.sh
+├── cloudflare/               # Terraform plus a live snapshot
+├── chatgpt/connectors.json
+├── regery/domain.json
+└── scripts/verify.sh
+```
+
+`[REDACTED_DEVICE_ALIAS]/ngrok/` is an intentional optional extension. [REDACTED_DEVICE_ALIAS] is explicitly Cloudflare-only and must not contain ngrok configuration or a ChatGPT fallback connector.
+
+Validate both directories and their shared schema with:
+
+```bash
+./scripts/verify-device-configs.sh
+```
+
+The device-specific `README.md` files are the operational runbooks. Snapshot status is historical; use each device's `scripts/verify.sh --live` before treating an endpoint or connector as currently available.
 
 ---
 
