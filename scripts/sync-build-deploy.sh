@@ -31,7 +31,7 @@ Safety contract:
   all validates, builds and deploys the already checked-out commit; it never fetches or merges.
   sync/deploy/all/rollback print a preview and make no changes without literal --apply.
   Deployment never uninstalls an app, bypasses signature checks, grants Restricted Settings,
-  automates Shizuku, or changes Qustodio. Debug canaries use scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh.
+  automates Shizuku, or changes Qustodio. The historical debug proof uses scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh.
 
 Examples:
   scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial SERIAL
@@ -336,11 +336,19 @@ preflight_artifact_and_device() {
 }
 
 verify_loopback_binding() {
-  local listeners
+  local listeners wifi_ip
   listeners="$(adb_target shell ss -ltn 2>/dev/null | tr -d '\r' || true)"
   [[ "$listeners" != *"0.0.0.0:8080"* && "$listeners" != *"[::]:8080"* ]] ||
     die "MCP port 8080 is exposed beyond loopback"
-  [[ "$listeners" == *"127.0.0.1:8080"* ]] || die "MCP server is not listening on loopback port 8080"
+  [[ "$listeners" == *"127.0.0.1:8080"* || "$listeners" == *"[::ffff:127.0.0.1]:8080"* ]] ||
+    die "MCP server is not listening on loopback port 8080"
+
+  wifi_ip="$(adb_target shell ip -o -4 addr show dev wlan0 scope global 2>/dev/null | tr -d '\r' | awk '{print $4}' | cut -d/ -f1 | head -1)"
+  [[ -n "$wifi_ip" ]] || die "Cannot verify Wi-Fi non-exposure because wlan0 has no IPv4 address"
+  if timeout 3 bash -c 'exec 3<>"/dev/tcp/$1/8080"' _ "$wifi_ip" 2>/dev/null; then
+    die "MCP port 8080 accepts TCP connections through the device Wi-Fi address"
+  fi
+  printf 'OK: MCP listens only on loopback and Wi-Fi TCP port 8080 is closed.\n'
 }
 
 write_deployment_manifest() {
@@ -362,6 +370,7 @@ deploy_artifact() {
   fi
   require_command adb
   require_command node
+  require_command timeout
   preflight_artifact_and_device
   local expected_package apply_script verify_script manifest
   expected_package="$(json_value "$(device_config)" application.package_id)"
@@ -377,8 +386,8 @@ deploy_artifact() {
   verify_loopback_binding
   "$verify_script" --live
   manifest="$(write_deployment_manifest PENDING_MANUAL_GATES)"
-  printf 'APK and configuration applied; live ordinary gates passed.\n'
-  printf 'PENDING_MANUAL_GATES: Restricted Settings, Shizuku grant/restart, OEM battery policy and Qustodio remain administrator checks.\n'
+  printf 'APK and configuration applied; basic endpoint and loopback checks passed.\n'
+  printf 'PENDING_MANUAL_GATES: authenticated ordinary/admin calls, OAuth denial, screen-off, service restart, Shizuku binder recovery, Restricted Settings, OEM battery policy and Qustodio remain acceptance checks.\n'
   printf 'Deployment manifest: %s\n' "$manifest"
 }
 

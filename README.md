@@ -380,21 +380,22 @@ and matching installed/candidate signing certificates.
 ./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
 ```
 
-The Shizuku extension is currently an implementation canary. Debug builds expose `admin_get_top_window`, the standard
-visible `admin_request_shizuku_permission` flow and the typed `admin_uninstall_app` operation. The uninstall operation
-removes a package only for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators
-and other critical system packages. These tools accept only the configured administrator bearer and reject OAuth
-clients such as ChatGPT. Release registration remains disabled until the persisted opt-in policy and administrator UI
-are implemented. Shizuku activation after a reboot remains a manual gate.
+Production and debug builds register exactly three reviewed Shizuku tools: `admin_get_top_window`, the standard visible
+`admin_request_shizuku_permission` flow and typed `admin_uninstall_app`. The uninstall operation removes a package only
+for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators and other critical
+system packages. These tools accept only the configured administrator bearer and reject OAuth clients such as ChatGPT.
+They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
+activation after a reboot remains a manual administrator gate.
 
-The isolated [REDACTED_DEVICE_ALIAS] canary can be installed beside production on loopback port `8081` with:
+The isolated [REDACTED_DEVICE_ALIAS] debug POC on loopback port `8081` is retained only as historical/test tooling and is not a rollout
+tier. After the production package passes acceptance it must be removed with its ADB forward. For regression testing:
 
 ```bash
 ANDROID_HOME=<android-sdk> ./scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh --serial <adb-serial> --apply
 ```
 
 See [Plan 66](docs/plans/66_shizuku_privileged_admin_tools_and_device_delivery_20260827142719.md) for the reviewed
-architecture, deferred destructive capabilities, signing migration and rollout gates.
+architecture, direct [REDACTED_DEVICE_ALIAS] production path, deferred broad capabilities, signing migration and acceptance gates.
 
 The device-specific `README.md` files are the operational runbooks. Snapshot status is historical; use each device's `scripts/verify.sh --live` before treating an endpoint or connector as currently available.
 

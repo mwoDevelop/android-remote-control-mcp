@@ -916,3 +916,43 @@ loopback/acceptance checks; prepare signing and rollback artifacts; synchronize 
 administrator connection; capture state and obtain any required migration confirmation; deploy/re-onboard; pass the full
 production acceptance; remove the debug package and finalize documentation. Lack of an authorized [REDACTED_DEVICE_ALIAS] ADB connection
 blocks only physical signing/deployment/acceptance work, not the local implementation and automated test phases.
+
+### RF-020 — Direct-production implementation checkpoint and live preflight
+
+RF-018/RF-019 were committed separately as `ba8b9ba`. The follow-up implementation removes the `BuildConfig.DEBUG`
+registration gate, centralizes a closed set of exactly three reviewed handlers and adds a regression proving both the
+exact surface and individual `disabledTools` removal. `run_shell`, generic settings, clear-data and APK installation
+remain absent. `ktlintCheck`, `detekt`, focused app/Shizuku tests and `assembleGmsRelease` pass. The full GMS debug suite
+completed 2,279 tests with only the existing environment-dependent ngrok and Cloudflare real-tunnel tests failing.
+
+The independent-review delivery findings were also implemented: the production listener verifier accepts Android's
+IPv6-mapped loopback form, rejects wildcard binding and performs a bounded Wi-Fi TCP connection attempt; nine shell
+contract tests pass. Device restoration now uses the application's actual `disabledTools`/`disabledParams` JSON names
+and quotes empty/JSON values through the second ADB shell, preventing silent argument shifting.
+
+Live [REDACTED_DEVICE_ALIAS] preflight used the explicit `[REDACTED_PRIVATE_ENDPOINT]` serial and confirmed Samsung `[REDACTED_OWNER_VALUE]/a34x`. The currently
+installed upstream-signed APK was archived below ignored `build/rollback/[REDACTED_DEVICE_ALIAS]/` with SHA-256 and certificate metadata.
+Its certificate does not establish an owner signing path. The local bearer was reapplied without printing it;
+authenticated MCP initialize, tools/list and `android_get_screen_state` now succeed locally and through Cloudflare,
+while unauthenticated access remains HTTP 401.
+
+The live configuration test exposed two pre-existing restoration bugs. A spaced `--edge` value was truncated by the
+ADB remote shell and, once quoted correctly, the installed app appended it after `tunnel run`, causing cloudflared to
+show help and exit with code 0. The configuration no longer uses that broken workaround. On [REDACTED_DEVICE_ALIAS], the embedded Go
+resolver also cannot establish a fresh tunnel while Private DNS presents an unavailable `[::1]:53`; restart now uses
+system DNS only for bounded tunnel startup and restores `family.adguard-dns.com` on success or error. The repaired
+workflow was tested live: the tunnel reconnected, Private DNS was restored, public unauthenticated access returned 401
+and the synchronized bearer returned 405 for an authenticated GET. `verify.sh --live` passes.
+
+A reproducible `--admin-smoke` gate now exercises MCP initialize, exact privileged tools/list, an ordinary call,
+`admin_get_top_window` and protected Qustodio uninstall rejection without logging credentials. Against the still-old
+production package it intentionally fails with `unexpected privileged tool surface (0 tools)`: the server currently
+exposes 57 ordinary tools and must not be marked production-Shizuku ready before the new APK is installed.
+
+The remaining hard blocker is signing, not implementation. `keystore.properties` is absent, so Gradle produced
+`app-gms-release-unsigned.apk`; it MUST NOT be deployed. Completion still requires an owner-controlled keystore and
+recovery decision, signed clean-SHA artifact, installed/candidate certificate comparison, explicit data-loss approval
+if the signatures differ, production install/re-onboarding, full automatic/manual acceptance and only then ADB cleanup
+of the debug package and forward 8081. The separate `android_[REDACTED_DEVICE_ALIAS]_admin` Codex entry is configured to read
+`ANDROID_[REDACTED_DEVICE_ALIAS]_ADMIN_BEARER_TOKEN`, but the Codex process must be restarted from an environment containing that variable
+before its live administrator call can be verified.

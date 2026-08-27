@@ -67,10 +67,10 @@ The application is a **service-based Android app** that exposes an MCP server ov
   transport and production devices bind it to `127.0.0.1:8080` behind their existing tunnels.
 - **Authorization boundary**: The transport propagates a non-secret request-scoped client class. Privileged handlers
   accept only the configured primary bearer path; OAuth clients are denied before the backend is invoked.
-- **Current milestone**: Debug builds register bounded `admin_get_top_window`, the standard visible Shizuku permission
-  request and typed user-0 package uninstall canaries. Package uninstall is guarded by an immutable protected-package
-  policy and requires Package Manager's explicit `Success` result. Release builds contain the backend library but
-  expose no privileged MCP tool until the persisted opt-in policy and administrator UI are complete.
+- **Current milestone**: Debug and release builds register exactly bounded `admin_get_top_window`, the standard visible
+  Shizuku permission request and typed user-0 package uninstall. Package uninstall is guarded by an immutable
+  protected-package policy and requires Package Manager's explicit `Success` result. The existing per-tool policy can
+  disable each handler; a dedicated administrator UI is optional and not a release gate for this local deployment.
 - **Deliberate exclusions**: No generic shell tool, prefix allowlist, generic settings writer, APK staging, clear-data
   action, root flow, second MCP stack, automated Shizuku start, or Qustodio mutation.
 - **Attribution**: The minimal reflective process-launch and parser approach is adapted from the reviewed Apache-2.0
@@ -78,7 +78,7 @@ The application is a **service-based Android app** that exposes an MCP server ov
 
 The binding drains stdout/stderr concurrently, retains bounded output, destroys timed-out/cancelled processes, and
 keeps Shizuku readiness separate from MCP server readiness. Non-rooted devices require manual Shizuku reactivation
-after reboot. The full rollout and signing gates are specified in
+after reboot. The direct [REDACTED_DEVICE_ALIAS] production, signing and acceptance gates are specified in
 [`Plan 66`](plans/66_shizuku_privileged_admin_tools_and_device_delivery_20260827142719.md).
 
 ### Inter-Service Communication

@@ -26,11 +26,9 @@ import com.danielealbano.androidremotecontrolmcp.mcp.oauth.AuthorizationCodeStor
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.JwtTokenService
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthApprovalCoordinator
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthServerDeps
-import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.GetTopWindowAdminHandler
 import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.PrivilegedToolAuthorizer
 import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.ProtectedPackagePolicy
-import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.RequestShizukuPermissionAdminHandler
-import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.UninstallApplicationAdminHandler
+import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.SHIZUKU_ADMIN_TOOL_NAMES
 import com.danielealbano.androidremotecontrolmcp.mcp.shizuku.registerShizukuAdminTools
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.LoggedToolRegistrar
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.McpToolUtils
@@ -482,21 +480,14 @@ class McpServerService : Service() {
         )
         registerLocationTools(registrar, locationProvider, privacyToolGate, toolNamePrefix, perms)
         registerSharingBundle(registrar, toolNamePrefix, perms, fileSizeLimitMb)
-        // First canary slice only: release registration waits for the persisted opt-in policy/UI.
-        if (com.danielealbano.androidremotecontrolmcp.BuildConfig.DEBUG) {
-            registerShizukuAdminTools(
-                registrar,
-                privilegedAdminBackend,
-                privilegedToolAuthorizer,
-                protectedPackagePolicy,
-                toolNamePrefix,
-                setOf(
-                    GetTopWindowAdminHandler.TOOL_NAME,
-                    RequestShizukuPermissionAdminHandler.TOOL_NAME,
-                    UninstallApplicationAdminHandler.TOOL_NAME,
-                ).filterTo(mutableSetOf(), perms::isToolEnabled),
-            )
-        }
+        registerShizukuAdminTools(
+            registrar,
+            privilegedAdminBackend,
+            privilegedToolAuthorizer,
+            protectedPackagePolicy,
+            toolNamePrefix,
+            SHIZUKU_ADMIN_TOOL_NAMES.filterTo(mutableSetOf(), perms::isToolEnabled),
+        )
     }
 
     private fun registerAccessibilityToolBundle(
