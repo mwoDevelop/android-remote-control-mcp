@@ -458,14 +458,15 @@ may therefore require a controlled package migration even though later owner-sig
 
 ### Task 7.3 — Explicit one-time [REDACTED_DEVICE_ALIAS] cutover, only if required
 
-- [ ] Capture and validate the current [REDACTED_DEVICE_ALIAS] configuration using `myconf/[REDACTED_DEVICE_ALIAS]` and a live verification snapshot.
-- [ ] Confirm Cloudflare/OAuth tokens are recoverable from the local ignored secret file before any removal.
-- [ ] Obtain explicit user approval for the downtime and data-reset boundary.
-- [ ] Stop the MCP service and tunnel.
-- [ ] If and only if signature mismatch makes replacement impossible, manually uninstall the old package, install the
+- [x] Capture and validate the current [REDACTED_DEVICE_ALIAS] configuration using `myconf/[REDACTED_DEVICE_ALIAS]` and a live verification snapshot.
+- [x] Confirm Cloudflare/OAuth tokens are recoverable from the local ignored secret file before any removal.
+- [x] Obtain explicit user approval for the downtime and data-reset boundary.
+- [x] Stop the MCP service and tunnel.
+- [x] If and only if signature mismatch makes replacement impossible, manually uninstall the old package, install the
   owner-signed release, reapply configuration and perform every manual Android permission step.
-- [ ] Restore Qustodio/battery/background allowances as needed without changing unrelated Qustodio policy.
-- [ ] Verify ordinary MCP, Cloudflare, OAuth, administrator bearer, Shizuku typed tools and Wi-Fi non-exposure.
+- [x] Restore Qustodio/battery/background allowances as needed without changing unrelated Qustodio policy.
+- [ ] Verify ordinary MCP, Cloudflare, OAuth, administrator bearer, Shizuku typed tools and Wi-Fi non-exposure. All
+  except fresh ChatGPT/Codex OAuth passed; OAuth reauthorization remains explicit.
 - [ ] Mark deployment `READY` only after every required live check passes; otherwise mark `PENDING` with exact blockers.
 
 ### Task 7.4 — Promotion to [REDACTED_DEVICE_ALIAS]
@@ -965,3 +966,40 @@ successful [REDACTED_DEVICE_ALIAS] production acceptance plus restored ADB acces
 `android_[REDACTED_DEVICE_ALIAS]_admin` Codex entry is configured to read
 `ANDROID_[REDACTED_DEVICE_ALIAS]_ADMIN_BEARER_TOKEN`, but the Codex process must be restarted from an environment containing that variable
 before its live administrator call can be verified.
+
+### RF-021 — Owner-signed [REDACTED_DEVICE_ALIAS] production deployed; OAuth reauthorization remains
+
+The owner explicitly approved the one-time uninstall/data-reset boundary for only
+`com.danielealbano.androidremotecontrolmcp`; the phone itself was not reset. The upstream-signed APK and a pre-migration
+state snapshot were archived below ignored local rollback storage. The old package was uninstalled, the owner-signed
+release installed and the declarative [REDACTED_DEVICE_ALIAS] configuration reapplied. Subsequent updates used `adb install -r`, proving
+that another data reset is not required while the owner signing key is retained.
+
+Production now runs `1.12.0-dev.50+97ef8e9` (`versionCode 20009830`), APK SHA-256
+`[REDACTED_RESOURCE_ID]`, with owner certificate SHA-256
+`[REDACTED_RESOURCE_ID]`. The final APK contains
+`libcloudflared.so` and `libngrok_java.so` for both supported ABIs. A packaging gap was found during migration: a plain
+Gradle build does not populate these native payloads in a fresh checkout. The guarded workflow now invokes the native
+build targets and rejects an APK missing any of the four entries. The deployed payload was verified against the exact
+native artifacts from the archived upstream APK, whose submodule SHAs match the current checkout.
+
+The live release exposed a second production-only gap in request-context ordering. A bearer-authenticated request
+reached the MCP server but the privileged handler initially observed an unknown client class. The final implementation
+uses stable Ktor phases ordered `McpAuth` then `McpRequestContext` before `Call`. Focused authorization/Shizuku tests,
+ktlint, detekt and release assembly pass. Of 2,282 GMS debug tests, 2,280 pass; the only two failures are the explicit
+host-environment gates for a missing `NGROK_AUTHTOKEN` and missing host `cloudflared` binary. [REDACTED_DEVICE_ALIAS] is Cloudflare-only,
+and its actual embedded tunnel was verified live on the device.
+
+Production acceptance passed through the public Cloudflare URL: unauthenticated MCP returns 401, the administrator
+bearer sees exactly three reviewed tools, an ordinary tool succeeds, Shizuku top-window succeeds and Qustodio uninstall
+is rejected before backend execution. The same gate passes with the screen in `Dozing`, after a full MCP/tunnel service
+restart and after restoring Qustodio. Port 8080 is closed on the Wi-Fi address; the app, embedded cloudflared and
+Shizuku processes remain active. Qustodio was restored to `Block` for both MCP and Shizuku and the Thursday daily limit
+to 120 minutes. The temporary debug package and forward 8081 were removed; only production remains installed.
+
+The deployment remains `PENDING_OAUTH_REAUTHORIZATION`, not fully `READY`. The required signing migration erased the
+application-owned DCR clients, JWT signing state and issued OAuth tokens. The saved ChatGPT/Codex connector definitions
+are recovery input, not proof that their old credentials still work. Completion requires reconnecting ChatGPT and the
+ordinary Codex client, proving an ordinary OAuth call and proving that the same OAuth identity is denied for an admin
+tool. Reboot/binder-stop recovery remains a documented manual operational test because deliberately stopping Shizuku
+would require another visible administrator start on this non-rooted phone. [REDACTED_DEVICE_ALIAS] was not changed.
