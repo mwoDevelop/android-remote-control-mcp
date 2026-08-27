@@ -9,9 +9,16 @@ import com.danielealbano.androidremotecontrolmcp.data.model.CloudflareTunnelMode
 import com.danielealbano.androidremotecontrolmcp.data.model.ServerLogEntry
 import com.danielealbano.androidremotecontrolmcp.data.model.ToolPermissionsConfig
 import com.danielealbano.androidremotecontrolmcp.data.model.TunnelProviderType
+import com.danielealbano.androidremotecontrolmcp.data.repository.OAuthClientRepository
 import com.danielealbano.androidremotecontrolmcp.data.repository.ServerLogRepository
 import com.danielealbano.androidremotecontrolmcp.data.repository.SettingsRepository
+import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthClient
+import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthPolicy
 import com.danielealbano.androidremotecontrolmcp.services.storage.StorageLocationProvider
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.util.UUID
 
 /**
  * Handles ADB configuration broadcast intents by parsing extras and
@@ -25,6 +32,7 @@ class AdbConfigHandler(
     private val settingsRepository: SettingsRepository,
     private val storageLocationProvider: StorageLocationProvider,
     private val serverLogRepository: ServerLogRepository,
+    private val oauthClientRepository: OAuthClientRepository? = null,
 ) {
     /**
      * Dispatches the intent to the appropriate handler based on its action.
@@ -69,6 +77,7 @@ class AdbConfigHandler(
         applyDownloadTimeout(intent)
         applyDeviceSlug(intent)
         applyToolPermissions(intent)
+        applyOauthClientRegistrations(intent)
         applyStorageLocationPermissions(intent)
 
         Log.i(TAG, "ADB configuration applied successfully")
@@ -344,6 +353,58 @@ class AdbConfigHandler(
         )
     }
 
+    private suspend fun applyOauthClientRegistrations(intent: Intent) {
+        val value = intent.getStringExtra(EXTRA_OAUTH_CLIENT_REGISTRATIONS) ?: return
+        val repository = oauthClientRepository
+        if (repository == null) {
+            Log.w(TAG, "Ignoring oauth_client_registrations because the repository is unavailable")
+            return
+        }
+        val registrations =
+            runCatching { Json.decodeFromString<List<OAuthClientRegistrationRestore>>(value) }
+                .getOrElse {
+                    Log.w(TAG, "Ignoring invalid oauth_client_registrations JSON")
+                    return
+                }
+        if (registrations.size > OAuthPolicy.MAX_OAUTH_CLIENTS) {
+            Log.w(TAG, "Ignoring oauth_client_registrations: too many clients")
+            return
+        }
+        val invalid =
+            registrations.any { registration ->
+                !isValidOAuthClientId(registration.clientId) ||
+                    registration.redirectUris.isEmpty() ||
+                    registration.redirectUris.any { !OAuthPolicy.isAllowedRedirectUri(it) }
+            } || registrations.map { it.clientId }.distinct().size != registrations.size
+        if (invalid) {
+            Log.w(TAG, "Ignoring invalid oauth_client_registrations entry")
+            return
+        }
+
+        val nowMs = System.currentTimeMillis()
+        registrations.forEach { registration ->
+            repository.restoreRegistration(
+                OAuthClient(
+                    clientId = registration.clientId,
+                    clientName = registration.clientName,
+                    redirectUris = registration.redirectUris,
+                    applicationType = registration.applicationType,
+                    logoUri = registration.logoUri,
+                    createdAtMs = nowMs,
+                    lastUsedAtMs = nowMs,
+                    currentRefreshJti = null,
+                ),
+            )
+        }
+        Log.i(TAG, "Restored ${registrations.size} OAuth client registration(s)")
+    }
+
+    private fun isValidOAuthClientId(clientId: String): Boolean {
+        if (!clientId.startsWith(OAUTH_CLIENT_ID_PREFIX)) return false
+        val uuid = clientId.removePrefix(OAUTH_CLIENT_ID_PREFIX)
+        return runCatching { UUID.fromString(uuid).toString() == uuid.lowercase() }.getOrDefault(false)
+    }
+
     private suspend fun applyStorageLocationPermissions(intent: Intent) {
         val locationId = intent.getStringExtra(EXTRA_STORAGE_LOCATION_ID) ?: return
         if (!storageLocationProvider.isLocationAuthorized(locationId)) {
@@ -408,8 +469,20 @@ class AdbConfigHandler(
         internal const val EXTRA_DOWNLOAD_TIMEOUT_SECONDS = "download_timeout_seconds"
         internal const val EXTRA_DEVICE_SLUG = "device_slug"
         internal const val EXTRA_TOOL_PERMISSIONS = "tool_permissions"
+        internal const val EXTRA_OAUTH_CLIENT_REGISTRATIONS = "oauth_client_registrations"
         internal const val EXTRA_STORAGE_LOCATION_ID = "storage_location_id"
         internal const val EXTRA_STORAGE_ALLOW_WRITE = "storage_allow_write"
         internal const val EXTRA_STORAGE_ALLOW_DELETE = "storage_allow_delete"
+
+        private const val OAUTH_CLIENT_ID_PREFIX = "arc-"
     }
 }
+
+@Serializable
+private data class OAuthClientRegistrationRestore(
+    @SerialName("client_id") val clientId: String,
+    @SerialName("client_name") val clientName: String? = null,
+    @SerialName("redirect_uris") val redirectUris: List<String>,
+    @SerialName("application_type") val applicationType: String? = null,
+    @SerialName("logo_uri") val logoUri: String? = null,
+)

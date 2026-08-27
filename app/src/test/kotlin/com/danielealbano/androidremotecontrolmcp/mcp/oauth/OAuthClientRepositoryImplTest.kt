@@ -121,6 +121,29 @@ class OAuthClientRepositoryImplTest {
         }
 
     @Test
+    @DisplayName("restoreRegistration preserves the original id and replaces only the matching client")
+    fun restoreRegistrationPreservesId() =
+        testScope.runTest {
+            val unrelated = register(1L)
+            val restored =
+                OAuthClient(
+                    clientId = "[REDACTED_OWNER_VALUE]",
+                    clientName = "ChatGPT",
+                    redirectUris = listOf("https://chatgpt.com/connector/oauth/example"),
+                    applicationType = "web",
+                    createdAtMs = 2L,
+                    lastUsedAtMs = 2L,
+                )
+
+            repository.restoreRegistration(restored)
+            repository.restoreRegistration(restored.copy(clientName = "ChatGPT restored", lastUsedAtMs = 3L))
+
+            assertNotNull(repository.getClient(unrelated.clientId))
+            assertEquals("ChatGPT restored", repository.getClient(restored.clientId)?.clientName)
+            assertEquals(2, repository.getClients().size)
+        }
+
+    @Test
     @DisplayName("revoke logs client name; unknown id logs nothing")
     fun revokeLogsClientName() =
         testScope.runTest {

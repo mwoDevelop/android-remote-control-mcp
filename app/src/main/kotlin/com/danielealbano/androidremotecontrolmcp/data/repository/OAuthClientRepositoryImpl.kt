@@ -114,6 +114,28 @@ class OAuthClientRepositoryImpl
                 newClient
             }
 
+        override suspend fun restoreRegistration(client: OAuthClient): OAuthClient =
+            mutex.withLock {
+                seedLocked()
+                val existing = snapshot.value.filterNot { it.clientId == client.clientId }
+                val combined = existing + client
+                val finalList =
+                    if (combined.size > OAuthPolicy.MAX_OAUTH_CLIENTS) {
+                        val unapprovedExisting = existing.filter { it.currentRefreshJti == null }
+                        val victim =
+                            (unapprovedExisting.ifEmpty { existing }).minByOrNull { it.lastUsedAtMs }
+                        if (victim != null) combined - victim else combined
+                    } else {
+                        combined
+                    }
+                persist(finalList)
+                serverLog.log(
+                    ServerLogEntry.Type.OAUTH,
+                    "OAuth client registration restored: ${client.clientName ?: client.clientId}",
+                )
+                client
+            }
+
         override suspend fun revoke(clientId: String) {
             mutex.withLock {
                 seedLocked()
