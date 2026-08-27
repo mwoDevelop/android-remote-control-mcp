@@ -432,6 +432,7 @@ dependencies {
     // Privacy Mode (on-device PII detection). The detection core lives in :privacy (pure JVM,
     // compileOnly onnxruntime); the Android AAR below supplies ai.onnxruntime.* at app runtime.
     implementation(project(":privacy"))
+    implementation(project(":shizuku-admin"))
     implementation(libs.onnxruntime.android)
 
     // Unit Testing

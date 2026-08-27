@@ -336,17 +336,17 @@ The bearer token is shown in the app's connection info and can be copied directl
 
 ## Managed Device Configurations
 
-This checkout contains reproducible local deployment snapshots for two Android devices. Both use the same directory contract and keep active credentials in a local `.env.secrets` file that is ignored by Git.
+This fork keeps reproducible, owner-specific deployment snapshots under `myconf/`. Both devices use the same directory contract and keep active credentials in a local `.env.secrets` file that is ignored by Git.
 
 | Device | Primary MCP endpoint | Remote-access policy | Captured provisioning state |
 |---|---|---|---|
-| [Xiaomi 11T (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational at the 2026-08-26 capture |
-| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin connected (57 tools) |
+| [Xiaomi 11T (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational at the 2026-08-26 capture |
+| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin connected (57 tools) |
 
 Each device directory contains the same common configuration areas:
 
 ```text
-<device>/
+myconf/<device>/
 ├── README.md
 ├── snapshot.json
 ├── .env.example
@@ -360,13 +360,41 @@ Each device directory contains the same common configuration areas:
 └── scripts/verify.sh
 ```
 
-`[REDACTED_DEVICE_ALIAS]/ngrok/` is an intentional optional extension. [REDACTED_DEVICE_ALIAS] is explicitly Cloudflare-only and must not contain ngrok configuration or a ChatGPT fallback connector.
+`myconf/[REDACTED_DEVICE_ALIAS]/ngrok/` is an intentional optional extension. [REDACTED_DEVICE_ALIAS] is explicitly Cloudflare-only and must not contain ngrok configuration or a ChatGPT fallback connector.
 
 Validate both directories and their shared schema with:
 
 ```bash
 ./scripts/verify-device-configs.sh
 ```
+
+The guarded local delivery workflow is defined in
+[`scripts/sync-build-deploy.sh`](scripts/sync-build-deploy.sh). Its `sync` command creates a review branch only;
+`all` builds and deploys the already checked-out reviewed commit and never fetches or merges. Mutation commands
+require the literal `--apply` flag, an explicit device, matching device identity, a qualified local build manifest,
+and matching installed/candidate signing certificates.
+
+```bash
+./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
+./scripts/sync-build-deploy.sh build --variant gmsDebug
+./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
+```
+
+The Shizuku extension is currently an implementation canary. Debug builds expose `admin_get_top_window`, the standard
+visible `admin_request_shizuku_permission` flow and the typed `admin_uninstall_app` operation. The uninstall operation
+removes a package only for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators
+and other critical system packages. These tools accept only the configured administrator bearer and reject OAuth
+clients such as ChatGPT. Release registration remains disabled until the persisted opt-in policy and administrator UI
+are implemented. Shizuku activation after a reboot remains a manual gate.
+
+The isolated [REDACTED_DEVICE_ALIAS] canary can be installed beside production on loopback port `8081` with:
+
+```bash
+ANDROID_HOME=<android-sdk> ./scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh --serial <adb-serial> --apply
+```
+
+See [Plan 66](docs/plans/66_shizuku_privileged_admin_tools_and_device_delivery_20260827142719.md) for the reviewed
+architecture, deferred destructive capabilities, signing migration and rollout gates.
 
 The device-specific `README.md` files are the operational runbooks. Snapshot status is historical; use each device's `scripts/verify.sh --live` before treating an endpoint or connector as currently available.
 

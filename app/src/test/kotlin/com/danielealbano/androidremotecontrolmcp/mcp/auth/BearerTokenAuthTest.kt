@@ -212,6 +212,52 @@ class BearerTokenAuthTest {
         }
 
     @Test
+    fun `plugin marks static bearer request with its client class`() =
+        testApplication {
+            application {
+                install(ContentNegotiation) { json() }
+                install(McpAuthPlugin) { expectedToken = TEST_TOKEN }
+                routing {
+                    get("/protected/resource") {
+                        call.respondText(call.attributes[McpAuthClientClassAttribute].name)
+                    }
+                }
+            }
+
+            val response =
+                client.get("/protected/resource") {
+                    header("Authorization", "Bearer $TEST_TOKEN")
+                }
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(McpAuthClientClass.STATIC_BEARER.name, response.bodyAsText())
+        }
+
+    @Test
+    fun `plugin marks OAuth request with its client class`() =
+        testApplication {
+            application {
+                install(ContentNegotiation) { json() }
+                install(McpAuthPlugin) {
+                    bearerTokenEnabled = false
+                    oauthEnabled = true
+                    validateOAuthToken = { token, _ -> token == "oauth-token" }
+                }
+                routing {
+                    get("/protected/resource") {
+                        call.respondText(call.attributes[McpAuthClientClassAttribute].name)
+                    }
+                }
+            }
+
+            val response =
+                client.get("/protected/resource") {
+                    header("Authorization", "Bearer oauth-token")
+                }
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(McpAuthClientClass.OAUTH.name, response.bodyAsText())
+        }
+
+    @Test
     fun `plugin skips authentication for excluded paths`() =
         testApplication {
             application {

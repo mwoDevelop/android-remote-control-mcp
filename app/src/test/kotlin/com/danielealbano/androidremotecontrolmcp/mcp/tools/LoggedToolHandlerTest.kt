@@ -2,6 +2,8 @@ package com.danielealbano.androidremotecontrolmcp.mcp.tools
 
 import com.danielealbano.androidremotecontrolmcp.data.model.ServerLogEntry
 import com.danielealbano.androidremotecontrolmcp.mcp.McpToolException
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClass
+import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassElement
 import com.danielealbano.androidremotecontrolmcp.testutil.RecordingServerLogRepository
 import io.mockk.mockk
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
@@ -13,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -186,6 +189,41 @@ class LoggedToolHandlerTest {
             val entry = recorder.ofType(ServerLogEntry.Type.TOOL_CALL).single()
             assertEquals("failed", entry.message)
             assertTrue(!entry.message.contains("500"))
+        }
+
+    @Test
+    fun `privileged success audit includes only non-secret client class`() =
+        runTest {
+            val recorder = RecordingServerLogRepository()
+            val handler =
+                loggedToolHandler(recorder, "admin_get_top_window", includeClientClass = true) {
+                    CallToolResult(content = listOf(TextContent(text = "ok")))
+                }
+
+            withContext(McpAuthClientClassElement(McpAuthClientClass.STATIC_BEARER)) {
+                handler(request)
+            }
+
+            val entry = recorder.ofType(ServerLogEntry.Type.TOOL_CALL).single()
+            assertEquals("client=static_bearer", entry.message)
+        }
+
+    @Test
+    fun `privileged failure audit includes marker and oauth client class but no error`() =
+        runTest {
+            val recorder = RecordingServerLogRepository()
+            val handler =
+                loggedToolHandler(recorder, "admin_get_top_window", includeClientClass = true) {
+                    throw McpToolException.PermissionDenied("secret detail")
+                }
+
+            withContext(McpAuthClientClassElement(McpAuthClientClass.OAUTH)) {
+                runCatching { handler(request) }
+            }
+
+            val entry = recorder.ofType(ServerLogEntry.Type.TOOL_CALL).single()
+            assertEquals("failed client=oauth", entry.message)
+            assertTrue(!entry.message.contains("secret"))
         }
 
     @Test
