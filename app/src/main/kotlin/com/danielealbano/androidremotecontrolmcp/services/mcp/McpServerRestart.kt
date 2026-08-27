@@ -3,6 +3,8 @@ package com.danielealbano.androidremotecontrolmcp.services.mcp
 import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.danielealbano.androidremotecontrolmcp.data.repository.SettingsRepository
 import kotlinx.coroutines.TimeoutCancellationException
@@ -13,6 +15,7 @@ import java.io.IOException
 
 private const val TAG = "MCP:ServerRestart"
 private const val FLAG_WRITE_TIMEOUT_MS = 2_000L
+private const val RECOVERY_RESTART_DELAY_MS = 1_000L
 
 /**
  * Durably persists the user's start/stop intent (`server_running`) on the calling thread before the
@@ -37,6 +40,28 @@ internal fun persistServerRunning(
 internal fun restartMcpServer(context: Context) {
     context.startForegroundService(
         Intent(context, McpServerService::class.java).apply { action = McpServerService.ACTION_START },
+    )
+}
+
+/**
+ * Starts a fresh service instance after the current instance has completed its teardown. The main
+ * looper callback survives the Service object and avoids racing ACTION_START with the old instance.
+ */
+internal fun scheduleMcpServerRestartAfterTunnelFailure(context: Context) {
+    val appContext = context.applicationContext
+    Handler(Looper.getMainLooper()).postDelayed(
+        {
+            try {
+                appContext.startForegroundService(
+                    Intent(appContext, McpServerService::class.java).apply {
+                        action = McpServerService.ACTION_RECOVER_TUNNEL
+                    },
+                )
+            } catch (e: ForegroundServiceStartNotAllowedException) {
+                Log.w(TAG, "Cannot recover MCP service after tunnel failure: foreground start not allowed", e)
+            }
+        },
+        RECOVERY_RESTART_DELAY_MS,
     )
 }
 
