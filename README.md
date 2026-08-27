@@ -387,8 +387,9 @@ system packages. These tools accept only the configured administrator bearer and
 They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
 activation after a reboot remains a manual administrator gate.
 
-The isolated [REDACTED_DEVICE_ALIAS] debug POC on loopback port `8081` is retained only as historical/test tooling and is not a rollout
-tier. After the production package passes acceptance it must be removed with its ADB forward. For regression testing:
+The isolated [REDACTED_DEVICE_ALIAS] debug POC on loopback port `8081` is historical/test tooling and is not a rollout tier. Its package
+and ADB forward were removed after the owner-signed production acceptance on 2026-08-27. For a future local-only
+regression proof:
 
 ```bash
 ANDROID_HOME=<android-sdk> ./scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh --serial <adb-serial> --apply
