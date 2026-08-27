@@ -234,6 +234,23 @@ variant_parts() {
   esac
 }
 
+prepare_native_tunnel_payload() {
+  require_command make
+  make -C "$REPO_ROOT" compile-cloudflared compile-ngrok-native
+}
+
+validate_tunnel_payload() {
+  local apk="$1" entries abi library
+  require_command unzip
+  entries="$(unzip -Z1 "$apk")"
+  for abi in arm64-v8a x86_64; do
+    for library in libcloudflared.so libngrok_java.so; do
+      grep -Fxq "lib/$abi/$library" <<<"$entries" ||
+        die "APK is missing required tunnel payload: lib/$abi/$library"
+    done
+  done
+}
+
 apk_metadata() {
   local apk="$1" analyzer signer app_id version_code version_name digest
   analyzer="$(resolve_android_tool apkanalyzer)"
@@ -269,12 +286,14 @@ build_variant() {
   variant_parts
   cd "$REPO_ROOT"
   scripts/verify-device-configs.sh
+  prepare_native_tunnel_payload
   ./gradlew ktlintCheck detekt
   ./gradlew :app:test :privacy:test :privacy-benchmark:test
   if [[ "$SKIP_E2E" == false ]]; then ./gradlew :e2e-tests:compileTestKotlin; fi
   ./gradlew "assemble${VARIANT^}"
   mapfile -t apks < <(find "app/build/outputs/apk/$FLAVOR/$BUILD_TYPE" -maxdepth 1 -type f -name '*.apk' | sort)
   ((${#apks[@]} == 1)) || die "Expected exactly one APK for $VARIANT, found ${#apks[@]}"
+  validate_tunnel_payload "${apks[0]}"
   local manifest
   manifest="$(write_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")"
   printf 'Build complete: %s\nManifest: %s\n' "${apks[0]}" "$manifest"
