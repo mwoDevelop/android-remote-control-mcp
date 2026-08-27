@@ -372,47 +372,55 @@ class AdbConfigHandler(
     private suspend fun applyOauthClientRegistrations(intent: Intent) {
         val value = intent.getStringExtra(EXTRA_OAUTH_CLIENT_REGISTRATIONS) ?: return
         val repository = oauthClientRepository
-        if (repository == null) {
-            Log.w(TAG, "Ignoring oauth_client_registrations because the repository is unavailable")
-            return
-        }
         val registrations =
             runCatching { Json.decodeFromString<List<OAuthClientRegistrationRestore>>(value) }
-                .getOrElse {
-                    Log.w(TAG, "Ignoring invalid oauth_client_registrations JSON")
-                    return
-                }
-        if (registrations.size > OAuthPolicy.MAX_OAUTH_CLIENTS) {
-            Log.w(TAG, "Ignoring oauth_client_registrations: too many clients")
-            return
-        }
-        val invalid =
-            registrations.any { registration ->
-                !isValidOAuthClientId(registration.clientId) ||
-                    registration.redirectUris.isEmpty() ||
-                    registration.redirectUris.any { !OAuthPolicy.isAllowedRedirectUri(it) }
-            } || registrations.map { it.clientId }.distinct().size != registrations.size
-        if (invalid) {
-            Log.w(TAG, "Ignoring invalid oauth_client_registrations entry")
-            return
-        }
+                .getOrNull()
+        when {
+            repository == null -> {
+                Log.w(TAG, "Ignoring oauth_client_registrations because the repository is unavailable")
+            }
 
-        val nowMs = System.currentTimeMillis()
-        registrations.forEach { registration ->
-            repository.restoreRegistration(
-                OAuthClient(
-                    clientId = registration.clientId,
-                    clientName = registration.clientName,
-                    redirectUris = registration.redirectUris,
-                    applicationType = registration.applicationType,
-                    logoUri = registration.logoUri,
-                    createdAtMs = nowMs,
-                    lastUsedAtMs = nowMs,
-                    currentRefreshJti = null,
-                ),
-            )
+            registrations == null -> {
+                Log.w(TAG, "Ignoring invalid oauth_client_registrations JSON")
+            }
+
+            registrations.size > OAuthPolicy.MAX_OAUTH_CLIENTS -> {
+                Log.w(TAG, "Ignoring oauth_client_registrations: too many clients")
+            }
+
+            !areValidOAuthClientRegistrations(registrations) -> {
+                Log.w(TAG, "Ignoring invalid oauth_client_registrations entry")
+            }
+
+            else -> {
+                val nowMs = System.currentTimeMillis()
+                registrations.forEach { registration ->
+                    repository.restoreRegistration(
+                        OAuthClient(
+                            clientId = registration.clientId,
+                            clientName = registration.clientName,
+                            redirectUris = registration.redirectUris,
+                            applicationType = registration.applicationType,
+                            logoUri = registration.logoUri,
+                            createdAtMs = nowMs,
+                            lastUsedAtMs = nowMs,
+                            currentRefreshJti = null,
+                        ),
+                    )
+                }
+                Log.i(TAG, "Restored ${registrations.size} OAuth client registration(s)")
+            }
         }
-        Log.i(TAG, "Restored ${registrations.size} OAuth client registration(s)")
+    }
+
+    private fun areValidOAuthClientRegistrations(registrations: List<OAuthClientRegistrationRestore>): Boolean {
+        val entriesValid =
+            registrations.all { registration ->
+                isValidOAuthClientId(registration.clientId) &&
+                    registration.redirectUris.isNotEmpty() &&
+                    registration.redirectUris.all(OAuthPolicy::isAllowedRedirectUri)
+            }
+        return entriesValid && registrations.map { it.clientId }.distinct().size == registrations.size
     }
 
     private fun isValidOAuthClientId(clientId: String): Boolean {
