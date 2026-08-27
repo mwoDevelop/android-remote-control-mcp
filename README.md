@@ -341,7 +341,7 @@ This checkout contains reproducible local deployment snapshots for two Android d
 | Device | Primary MCP endpoint | Remote-access policy | Captured provisioning state |
 |---|---|---|---|
 | [Xiaomi 11T (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational at the 2026-08-26 capture |
-| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `https://a34.[REDACTED_PRIVATE_HOST]/mcp` | Cloudflare only | Cloudflare provisioned; phone and ChatGPT connector pending at the 2026-08-26 capture |
+| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)]([REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin connected (57 tools) |
 
 Each device directory contains the same common configuration areas:
 

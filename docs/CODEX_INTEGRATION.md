@@ -136,6 +136,23 @@ tool are trusted. This project currently does not publish MCP safety annotations
 so `auto` and `writes` conservatively require confirmation for its tools. For a
 phone-control server, `prompt` is the recommended starting point.
 
+The local deployment documented in this repository deliberately grants full
+access to both trusted phones:
+
+```toml
+[mcp_servers.android_xiaomi11t]
+url = "[REDACTED_OWNER_VALUE]"
+default_tools_approval_mode = "approve"
+
+[mcp_servers.android_[REDACTED_DEVICE_ALIAS]]
+url = "[REDACTED_OWNER_VALUE]"
+default_tools_approval_mode = "approve"
+```
+
+There is no `enabled_tools` allow list or `disabled_tools` deny list, so Codex
+loads every tool exposed by each server. OAuth credentials are stored separately
+by Codex after `codex mcp login`; they must not be copied into this file.
+
 Put the entry in `~/.codex/config.toml` when the phone should be available to all
 Codex projects for the current user. To limit access to one trusted repository,
 put the same entry in that repository's `.codex/config.toml` instead. Project
@@ -251,6 +268,9 @@ leaving the server available whenever the tunnel reconnects.
 - Confirm the two-digit OAuth code only for a login you initiated.
 - Keep `default_tools_approval_mode = "prompt"` until the enabled tools and their
   effects have been reviewed.
+- The documented `[REDACTED_DEVICE_ALIAS]` and `[REDACTED_DEVICE_ALIAS]` entries intentionally use `approve` at the
+  owner's request, which gives Codex all available phone-control actions without
+  per-call MCP confirmation.
 - Do not publish the Cloudflare tunnel token, MCP bearer token, OAuth tokens, or
   browser CDP endpoint.
 - Stop the server and tunnel when remote control is not needed.
