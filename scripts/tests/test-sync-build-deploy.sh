@@ -169,6 +169,25 @@ test_production_listener_safety() {
   pass "production listener accepts IPv6-mapped loopback and rejects wildcard or Wi-Fi exposure"
 }
 
+test_tunnel_payload_gate() {
+  local output status
+  eval "$(sed -n '/^validate_tunnel_payload() {/,/^}/p' "$SOURCE_SCRIPT")"
+  die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+  require_command() { :; }
+  unzip() { printf '%s\n' "$TEST_APK_ENTRIES"; }
+
+  TEST_APK_ENTRIES=$'lib/arm64-v8a/libcloudflared.so\nlib/arm64-v8a/libngrok_java.so\nlib/x86_64/libcloudflared.so\nlib/x86_64/libngrok_java.so'
+  validate_tunnel_payload test.apk
+
+  TEST_APK_ENTRIES=$'lib/arm64-v8a/libcloudflared.so\nlib/arm64-v8a/libngrok_java.so\nlib/x86_64/libcloudflared.so'
+  set +e
+  output="$( (validate_tunnel_payload test.apk) 2>&1 )"
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$output" == *'lib/x86_64/libngrok_java.so'* ]]
+  pass "qualified builds require Cloudflare and ngrok payloads for both supported ABIs"
+}
+
 test_help
 test_unknown_flag
 test_sync_preview
@@ -178,5 +197,6 @@ test_deploy_preview
 test_all_preview_has_no_sync
 test_ambiguous_adb
 test_production_listener_safety
+test_tunnel_payload_gate
 
 printf '1..%d\n' "$PASSED"
