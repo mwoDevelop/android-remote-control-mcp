@@ -450,10 +450,10 @@ may therefore require a controlled package migration even though later owner-sig
 
 ### Task 7.2 — Owner release signing
 
-- [ ] Create/use an owner-controlled release keystore outside Git; record only certificate digest and recovery/storage
+- [x] Create/use an owner-controlled release keystore outside Git; record only certificate digest and recovery/storage
   instructions, never the keystore or passwords.
-- [ ] Verify reproducible release build and signed APK metadata.
-- [ ] Archive the signed artifact and SHA-256 in a protected local release location.
+- [x] Verify reproducible release build and signed APK metadata.
+- [x] Archive the signed artifact and SHA-256 in a protected local release location.
 - [ ] Confirm both target devices currently have the same or different signing identity and record the result.
 
 ### Task 7.3 — Explicit one-time [REDACTED_DEVICE_ALIAS] cutover, only if required
@@ -470,7 +470,7 @@ may therefore require a controlled package migration even though later owner-sig
 
 ### Task 7.4 — Promotion to [REDACTED_DEVICE_ALIAS]
 
-- [ ] Require a successful [REDACTED_DEVICE_ALIAS] canary including screen-off/service restart, Shizuku binder recovery and Cloudflare
+- [ ] Require successful direct [REDACTED_DEVICE_ALIAS] production acceptance including screen-off/service restart, Shizuku binder recovery and Cloudflare
   reconnection.
 - [ ] Require explicit owner approval before selecting [REDACTED_DEVICE_ALIAS] in the deployment script.
 - [ ] Repeat signing preflight; do not assume the installed certificate matches [REDACTED_DEVICE_ALIAS].
@@ -483,7 +483,7 @@ may therefore require a controlled package migration even though later owner-sig
 ### Task 8.1 — Application upstream merges
 
 - [ ] Finish and commit the current `myconf/` reorganization before starting this plan's implementation branch.
-- [ ] Create the personal GitHub fork and configure `origin`; retain `upstream` as fetch-only/push-disabled.
+- [x] Create the personal GitHub fork and configure `origin`; retain `upstream` as fetch-only/push-disabled.
 - [ ] Keep Shizuku work in small commits: dependency/module, backend, authorization/tools, UI/settings, automation,
   device docs. Avoid mixing upstream merges with feature edits.
 - [ ] Perform upstream merges only on `sync/upstream-*` branches created by the automation script.
@@ -949,10 +949,19 @@ A reproducible `--admin-smoke` gate now exercises MCP initialize, exact privileg
 production package it intentionally fails with `unexpected privileged tool surface (0 tools)`: the server currently
 exposes 57 ordinary tools and must not be marked production-Shizuku ready before the new APK is installed.
 
-The remaining hard blocker is signing, not implementation. `keystore.properties` is absent, so Gradle produced
-`app-gms-release-unsigned.apk`; it MUST NOT be deployed. Completion still requires an owner-controlled keystore and
-recovery decision, signed clean-SHA artifact, installed/candidate certificate comparison, explicit data-loss approval
-if the signatures differ, production install/re-onboarding, full automatic/manual acceptance and only then ADB cleanup
-of the debug package and forward 8081. The separate `android_[REDACTED_DEVICE_ALIAS]_admin` Codex entry is configured to read
+The owner-controlled signing material now exists only in ignored local storage with mode `0600`; its certificate
+SHA-256 is `[REDACTED_RESOURCE_ID]`. A clean signed GMS release for commit
+`a464795` was verified as package `com.danielealbano.androidremotecontrolmcp`, version `1.12.0-dev.47+a464795`,
+`versionCode 20009800`, APK SHA-256 `[REDACTED_RESOURCE_ID]`, and archived below ignored local build
+artifacts. The [REDACTED_DEVICE_ALIAS] installed certificate remains the upstream certificate
+`[REDACTED_RESOURCE_ID]`, so automatic `install -r` is impossible
+and the guarded deploy path must continue to refuse it. [REDACTED_DEVICE_ALIAS] is healthy through Cloudflare at
+`1.12.0-dev.11+aa1bb06`, but its saved ADB endpoint refuses the connection and no wireless-debugging mDNS service is
+advertised, so its installed certificate cannot yet be confirmed.
+
+Completion therefore requires explicit [REDACTED_DEVICE_ALIAS] data-loss approval, production uninstall/install/re-onboarding, full
+automatic/manual acceptance and only then ADB cleanup of the debug package and forward 8081. [REDACTED_DEVICE_ALIAS] promotion waits for
+successful [REDACTED_DEVICE_ALIAS] production acceptance plus restored ADB access and its own signing comparison. The separate
+`android_[REDACTED_DEVICE_ALIAS]_admin` Codex entry is configured to read
 `ANDROID_[REDACTED_DEVICE_ALIAS]_ADMIN_BEARER_TOKEN`, but the Codex process must be restarted from an environment containing that variable
 before its live administrator call can be verified.
