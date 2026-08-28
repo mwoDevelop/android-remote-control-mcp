@@ -223,8 +223,12 @@ test_ambiguous_adb() {
   local repo fake_bin secret
   repo="$(new_repo)"
   fake_bin="$(mktemp -d "$WORK_ROOT/bin.XXXXXX")"
-  cat >"$fake_bin/adb" <<'EOF'
+cat >"$fake_bin/adb" <<'EOF'
 #!/usr/bin/env bash
+if [[ -n "${[REDACTED_DEVICE_ALIAS]_PIN:-}" ]]; then
+  printf '[REDACTED_DEVICE_ALIAS]_PIN leaked to adb child\n' >&2
+  exit 77
+fi
 if [[ "${1:-}" == "devices" ]]; then
   printf 'List of devices attached\nserial-one\tdevice\nserial-two\tdevice\n'
   exit 0
@@ -233,10 +237,28 @@ exit 99
 EOF
   chmod +x "$fake_bin/adb"
   secret="$repo/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
-  printf 'ANDROID_MCP_BEARER_TOKEN=test\nCLOUDFLARE_TUNNEL_TOKEN=test\nADB_SERIAL=\n' >"$secret"
+  printf 'ANDROID_MCP_BEARER_TOKEN=test\nCLOUDFLARE_TUNNEL_TOKEN=test\nADB_SERIAL=\nexport [REDACTED_DEVICE_ALIAS]_PIN=987654\n' >"$secret"
   chmod 600 "$secret"
   expect_failure "ambiguous ADB selection is rejected" "ADB serial is required because 2" \
     bash -c "cd '$repo' && PATH='$fake_bin':\"\$PATH\" scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS]"
+}
+
+test_secret_reader_does_not_execute_or_export_pin() {
+  local repo secret value marker
+  repo="$(new_repo)"
+  secret="$repo/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
+  marker="$repo/executed"
+  printf 'ANDROID_MCP_BEARER_TOKEN=admin-token\nCLOUDFLARE_TUNNEL_TOKEN=tunnel-token\nexport [REDACTED_DEVICE_ALIAS]_PIN=$(touch %s)\n' "$marker" >"$secret"
+  chmod 600 "$secret"
+  (
+    eval "$(sed -n '/^read_secret_variable() {/,/^}/p' "$SOURCE_SCRIPT")"
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    value="$(read_secret_variable "$secret" ANDROID_MCP_BEARER_TOKEN)"
+    [[ "$value" == "admin-token" ]]
+    [[ -z "${[REDACTED_DEVICE_ALIAS]_PIN:-}" ]]
+  )
+  [[ ! -e "$marker" ]]
+  pass "secret reader neither executes nor exports unrelated [REDACTED_DEVICE_ALIAS]_PIN"
 }
 
 test_production_listener_safety() {
@@ -310,6 +332,7 @@ test_vendor_fast_forward_detection
 test_deploy_preview
 test_all_preview_has_no_sync
 test_ambiguous_adb
+test_secret_reader_does_not_execute_or_export_pin
 test_production_listener_safety
 test_tunnel_payload_gate
 

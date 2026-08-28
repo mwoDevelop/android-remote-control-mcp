@@ -1,6 +1,7 @@
 package com.mwodevelop.androidremotecontrol.shizukuadmin
 
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
@@ -160,6 +161,34 @@ class ShizukuPrivilegedAdminBackendTest {
             val error = runCatching { target.uninstallApplication("com.example.removable") }.exceptionOrNull()
 
             assertInstanceOf(PrivilegedAdminException.OperationRejected::class.java, error)
+        }
+
+    @Test
+    fun `local feasibility input consumes buffers and does not use command executor`() =
+        runTest {
+            var commandExecuted = false
+            var captured = byteArrayOf()
+            val supplied = byteArrayOf(1, 2, 3, 4)
+            val target =
+                ShizukuPrivilegedAdminBackend(
+                    stateProbe = probe(),
+                    commandExecutor =
+                        PrivilegedCommandExecutor { _, _, _ ->
+                            commandExecuted = true
+                            commandResult()
+                        },
+                    digitInputClient =
+                        PrivilegedDigitInputClient { digits ->
+                            captured = digits.copyOf()
+                            true
+                        },
+                )
+
+            assertEquals(true, target.injectUnlockDigitsForLocalFeasibilityTest(supplied))
+
+            assertEquals(false, commandExecuted)
+            assertArrayEquals(byteArrayOf(1, 2, 3, 4), captured)
+            assertArrayEquals(byteArrayOf(0, 0, 0, 0), supplied)
         }
 
     private fun backend(

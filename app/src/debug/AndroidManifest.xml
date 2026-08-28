@@ -20,6 +20,14 @@
             android:name=".debug.OAuthApprovalTestReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+
+        <!-- Local-only secure-keyguard feasibility harness. It accepts the PIN only through a
+             FLAG_SECURE on-device keypad and is absent from every release APK. DUMP lets the
+             administrator launch it through adb shell while ordinary apps cannot. -->
+        <activity
+            android:name=".debug.RemoteUnlockFeasibilityActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
     </application>
 
 </manifest>
