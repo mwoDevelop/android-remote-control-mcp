@@ -165,7 +165,7 @@ class McpServer(
             expectedToken = config.bearerToken
             oauthEnabled = config.oauthEnabled
             baseUrlOf = { effectiveBaseUrl(it, config.publicUrlOverride) }
-            validateOAuthToken = { token, resource -> accessValidator.validate(token, resource) }
+            validateOAuthClient = { token, resource -> accessValidator.validateClient(token, resource) }
             excludedPaths = setOf("/health", "/register", "/token", "/authorize", "/authorize/status")
             excludedPathPrefixes = setOf(EphemeralFileLinkService.PATH_PREFIX, "/.well-known/")
             onAuthFailure = { serverLog.log(ServerLogEntry.Type.AUTH, "Authentication failed from $it") }

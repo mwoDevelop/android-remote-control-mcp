@@ -17,9 +17,13 @@ enum class McpAuthClientClass {
 /** Ktor-call attribute written by [McpAuthPlugin] after authentication succeeds. */
 internal val McpAuthClientClassAttribute = AttributeKey<McpAuthClientClass>("McpAuthClientClass")
 
+/** Verified server-issued OAuth client ID; absent for every other authentication path. */
+internal val McpOAuthClientIdAttribute = AttributeKey<String>("McpOAuthClientId")
+
 /** Coroutine-context element carrying the authenticated client class into MCP tool handlers. */
 class McpAuthClientClassElement(
     val clientClass: McpAuthClientClass,
+    val oauthClientId: String? = null,
 ) : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<McpAuthClientClassElement>
 }
@@ -27,3 +31,6 @@ class McpAuthClientClassElement(
 /** Returns the current request's authentication class, or [McpAuthClientClass.UNKNOWN] outside a request. */
 suspend fun currentMcpAuthClientClass(): McpAuthClientClass =
     coroutineContext[McpAuthClientClassElement]?.clientClass ?: McpAuthClientClass.UNKNOWN
+
+/** Returns the verified exact OAuth client ID, or null for bearer/open/unknown requests. */
+suspend fun currentMcpOAuthClientId(): String? = coroutineContext[McpAuthClientClassElement]?.oauthClientId

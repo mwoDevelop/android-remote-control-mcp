@@ -5,6 +5,9 @@ package com.danielealbano.androidremotecontrolmcp.mcp.shizuku
 import com.danielealbano.androidremotecontrolmcp.mcp.McpToolException
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.LoggedToolRegistrar
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.McpToolUtils
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockController
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockCredentialStore
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockOperation
 import com.mwodevelop.androidremotecontrol.shizukuadmin.ApplicationUninstallResult
 import com.mwodevelop.androidremotecontrol.shizukuadmin.PrivilegedAdminBackend
 import com.mwodevelop.androidremotecontrol.shizukuadmin.PrivilegedAdminException
@@ -174,6 +177,38 @@ class UninstallApplicationAdminHandler
         }
     }
 
+/** Zero-argument, one-shot remote unlock. Credential material never crosses the MCP boundary. */
+class UnlockDeviceAdminHandler(
+    private val controller: RemoteUnlockOperation,
+    private val credentialStore: RemoteUnlockCredentialStore,
+    private val authorizer: PrivilegedToolAuthorizer,
+) {
+    suspend fun execute(): CallToolResult {
+        authorizer.requireRemoteUnlock(credentialStore.status().authorizedClientId)
+        return McpToolUtils.textResult(
+            buildJsonObject { put("status", controller.unlock().wireValue) }.toString(),
+        )
+    }
+
+    fun register(
+        registrar: LoggedToolRegistrar,
+        toolNamePrefix: String,
+    ) {
+        registrar.addPrivilegedTool(
+            toolName = TOOL_NAME,
+            name = "$toolNamePrefix$TOOL_NAME",
+            description =
+                "Unlocks this device using a locally provisioned credential. Takes no PIN or other input; " +
+                    "the credential never leaves the device. Requires an explicit one-shot local administrator arm.",
+            inputSchema = ToolSchema(properties = buildJsonObject {}, required = emptyList()),
+        ) { _ -> execute() }
+    }
+
+    companion object {
+        const val TOOL_NAME = "admin_unlock_device"
+    }
+}
+
 private fun TopWindowInfo.toJson() =
     buildJsonObject {
         packageName?.let { put("package_name", it) }
@@ -199,6 +234,7 @@ internal val SHIZUKU_ADMIN_TOOL_NAMES =
         GetTopWindowAdminHandler.TOOL_NAME,
         RequestShizukuPermissionAdminHandler.TOOL_NAME,
         UninstallApplicationAdminHandler.TOOL_NAME,
+        UnlockDeviceAdminHandler.TOOL_NAME,
     )
 
 /** One conflict-minimizing seam used by the existing MCP server. */
@@ -207,6 +243,8 @@ fun registerShizukuAdminTools(
     backend: PrivilegedAdminBackend,
     authorizer: PrivilegedToolAuthorizer,
     protectedPackagePolicy: ProtectedPackagePolicy,
+    remoteUnlockController: RemoteUnlockOperation,
+    remoteUnlockCredentialStore: RemoteUnlockCredentialStore,
     toolNamePrefix: String,
     enabledTools: Set<String>,
 ) {
@@ -218,6 +256,12 @@ fun registerShizukuAdminTools(
     }
     if (UninstallApplicationAdminHandler.TOOL_NAME in enabledTools) {
         UninstallApplicationAdminHandler(backend, authorizer, protectedPackagePolicy).register(
+            registrar,
+            toolNamePrefix,
+        )
+    }
+    if (UnlockDeviceAdminHandler.TOOL_NAME in enabledTools) {
+        UnlockDeviceAdminHandler(remoteUnlockController, remoteUnlockCredentialStore, authorizer).register(
             registrar,
             toolNamePrefix,
         )

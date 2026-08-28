@@ -54,6 +54,8 @@ import com.danielealbano.androidremotecontrolmcp.privacy.PrivacyModeStatus
 import com.danielealbano.androidremotecontrolmcp.privacy.PrivacyToolGate
 import com.danielealbano.androidremotecontrolmcp.privacy.PseudonymStore
 import com.danielealbano.androidremotecontrolmcp.privacy.ner.NerCache
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockController
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockCredentialStore
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityNodeCache
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityServiceProvider
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityToolCallIndicator
@@ -193,6 +195,10 @@ class McpServerService : Service() {
     @Inject lateinit var privilegedToolAuthorizer: PrivilegedToolAuthorizer
 
     @Inject lateinit var protectedPackagePolicy: ProtectedPackagePolicy
+
+    @Inject lateinit var remoteUnlockController: RemoteUnlockController
+
+    @Inject lateinit var remoteUnlockCredentialStore: RemoteUnlockCredentialStore
 
     /** Config of the currently running server; used to build capability-link base URLs. */
     @Volatile
@@ -496,6 +502,8 @@ class McpServerService : Service() {
             privilegedAdminBackend,
             privilegedToolAuthorizer,
             protectedPackagePolicy,
+            remoteUnlockController,
+            remoteUnlockCredentialStore,
             toolNamePrefix,
             SHIZUKU_ADMIN_TOOL_NAMES.filterTo(mutableSetOf(), perms::isToolEnabled),
         )

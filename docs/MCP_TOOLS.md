@@ -174,6 +174,27 @@ Tool errors are **not** returned as JSON-RPC error codes. Instead, the SDK catch
 
 Protocol-level errors (parse errors, invalid requests) are handled automatically by the SDK and returned as standard JSON-RPC errors.
 
+## Privileged remote unlock
+
+### `admin_unlock_device`
+
+Unlocks the device with a credential encrypted for its Android Keystore key. The input schema is empty: clients cannot
+provide, retrieve, or replace the PIN through MCP. The administrator bearer is accepted; OAuth is accepted only for the
+exact locally configured server-issued client ID. A local DUMP-gated administrator action must arm one attempt for at
+most 15 minutes.
+
+Stable result statuses are `unlocked`, `already_unlocked`, `disabled`, `not_configured`, `temporarily_blocked`,
+`unavailable`, and `unlock_failed_rearm_required`. A failed attempt latches the operation until a local rearm. Other
+Shizuku administrator tools remain bearer-only.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "required": []
+}
+```
+
 ---
 
 ## 1. Screen Introspection Tools

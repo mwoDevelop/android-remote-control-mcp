@@ -149,6 +149,13 @@
             android:permission="android.permission.DUMP">
         </receiver>
 
+        <!-- ADB-only remote-unlock provisioning. Only ciphertext and public metadata cross this boundary. -->
+        <provider
+            android:name=".security.remoteunlock.RemoteUnlockProvisioningProvider"
+            android:authorities="${applicationId}.remote-unlock"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
         <!-- Event Channel Service -->
         <service
             android:name=".services.channel.EventChannelService"

@@ -61,7 +61,8 @@ interface PrivilegedAdminBackend {
     suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult
 
     /** Local-only feasibility seam. It is not registered as an MCP tool and consumes [digits]. */
-    suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean
+    @Suppress("MaxLineLength")
+    suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean = throw PrivilegedAdminException.Unavailable()
 }
 
 /** Creates the production backend while keeping implementation types private to this module. */
