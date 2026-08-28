@@ -378,9 +378,17 @@ and matching installed/candidate signing certificates.
 Pinned native dependencies use the same entrypoint with explicit refs, for example
 `./scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply`; vendor updates must be fast-forwards.
 
+The `build` command also has two explicit upstream-channel modes. `--latest-stable` resolves the highest official
+strict `vMAJOR.MINOR.PATCH` tag, while `--latest-edge` resolves the official moving `edge` tag. Each mode fetches into
+a private local ref, builds the exact upstream commit in an isolated temporary worktree, leaves `main` unchanged and
+never deploys. The APK and a provenance manifest are copied to `build/channels/stable/` or `build/channels/edge/`.
+These are pure official-upstream builds, so they intentionally exclude this fork's custom commits and `myconf/`.
+
 ```bash
 ./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
 ./scripts/sync-build-deploy.sh build --variant gmsDebug
+./scripts/sync-build-deploy.sh build --latest-stable --variant gmsDebug
+./scripts/sync-build-deploy.sh build --latest-edge --variant gmsDebug
 ./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
 ```
 

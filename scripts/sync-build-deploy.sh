@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+REPO_ROOT="${ARCP_REPO_ROOT_OVERRIDE:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)}"
 PACKAGE_ID="com.danielealbano.androidremotecontrolmcp"
 OFFICIAL_UPSTREAM="https://github.com/danielealbano/android-remote-control-mcp.git"
 DEFAULT_VARIANT="gmsRelease"
@@ -14,6 +14,8 @@ ARTIFACT=""
 UPSTREAM_REF="upstream/main"
 CLOUDFLARED_REF=""
 NGROK_REF=""
+LATEST_STABLE=false
+LATEST_EDGE=false
 SKIP_E2E=false
 COMMAND="${1:-}"
 shift || true
@@ -25,7 +27,8 @@ Usage:
   scripts/sync-build-deploy.sh sync   [--upstream-ref upstream/main]
                                       [--cloudflared-ref <tag-or-origin/ref>]
                                       [--ngrok-ref <origin/ref>] --apply
-  scripts/sync-build-deploy.sh build  [--variant gmsDebug|fossDebug|gmsRelease|fossRelease] [--skip-e2e-compile]
+  scripts/sync-build-deploy.sh build  [--variant gmsDebug|fossDebug|gmsRelease|fossRelease]
+                                      [--latest-stable|--latest-edge] [--skip-e2e-compile]
   scripts/sync-build-deploy.sh deploy --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <apk> [--serial <adb-serial>] --apply
   scripts/sync-build-deploy.sh all    --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> [--variant ...] [--serial <adb-serial>] --apply
   scripts/sync-build-deploy.sh rollback --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <known-good-apk> [--serial <adb-serial>] --apply
@@ -34,6 +37,8 @@ Safety contract:
   check is read-only. sync fetches upstream and creates a review branch only when new commits exist;
   it exits without creating a branch when upstream is already integrated, and never deploys.
   all validates, builds and deploys the already checked-out commit; it never fetches or merges.
+  build --latest-stable/--latest-edge fetches the selected official upstream tag and builds it
+  in an isolated temporary worktree; it never changes main or deploys the artifact.
   sync/deploy/all/rollback print a preview and make no changes without literal --apply.
   Deployment never uninstalls an app, bypasses signature checks, grants Restricted Settings,
   automates Shizuku, or changes Qustodio. The historical debug proof uses scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh.
@@ -43,6 +48,8 @@ Examples:
   scripts/sync-build-deploy.sh sync --upstream-ref upstream/main --apply
   scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply
   scripts/sync-build-deploy.sh build --variant gmsDebug
+  scripts/sync-build-deploy.sh build --latest-stable --variant gmsDebug
+  scripts/sync-build-deploy.sh build --latest-edge --variant gmsDebug
   scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial SERIAL --apply
 EOF
 }
@@ -66,6 +73,8 @@ parse_args() {
       --upstream-ref) (($# >= 2)) || die "--upstream-ref requires a value"; UPSTREAM_REF="$2"; shift 2 ;;
       --cloudflared-ref) (($# >= 2)) || die "--cloudflared-ref requires a value"; CLOUDFLARED_REF="$2"; shift 2 ;;
       --ngrok-ref) (($# >= 2)) || die "--ngrok-ref requires a value"; NGROK_REF="$2"; shift 2 ;;
+      --latest-stable) LATEST_STABLE=true; shift ;;
+      --latest-edge) LATEST_EDGE=true; shift ;;
       --skip-e2e-compile) SKIP_E2E=true; shift ;;
       --apply) APPLY=true; shift ;;
       --help|-h) usage; exit 0 ;;
@@ -75,16 +84,20 @@ parse_args() {
 }
 
 validate_contract() {
+  [[ "$LATEST_STABLE" == false || "$LATEST_EDGE" == false ]] ||
+    die "--latest-stable and --latest-edge are mutually exclusive"
   case "$COMMAND" in
     check)
       [[ -n "$DEVICE" ]] || die "check requires --device"
       [[ "$APPLY" == false ]] || die "check does not accept --apply"
       [[ "$VARIANT" == "$DEFAULT_VARIANT" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
-         -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$SKIP_E2E" == false ]] ||
+         -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false &&
+         "$SKIP_E2E" == false ]] ||
         die "check received an option that belongs to another command"
       ;;
     sync)
-      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" && "$SKIP_E2E" == false ]] ||
+      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
+         "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$SKIP_E2E" == false ]] ||
         die "sync accepts only upstream refs and --apply"
       [[ "$UPSTREAM_REF" =~ ^upstream/[A-Za-z0-9._/-]+$ ]] || die "--upstream-ref must name a ref below upstream/"
       [[ -z "$CLOUDFLARED_REF" || "$CLOUDFLARED_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Invalid --cloudflared-ref"
@@ -94,18 +107,18 @@ validate_contract() {
     build)
       [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
          -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$APPLY" == false ]] ||
-        die "build accepts only --variant and --skip-e2e-compile"
+        die "build accepts only --variant, one latest channel flag and --skip-e2e-compile"
       ;;
     deploy|rollback)
       [[ -n "$DEVICE" && -n "$ARTIFACT" ]] || die "$COMMAND requires --device and --artifact"
       [[ "$VARIANT" == "$DEFAULT_VARIANT" && "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" &&
-         -z "$NGROK_REF" && "$SKIP_E2E" == false ]] ||
+         -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$SKIP_E2E" == false ]] ||
         die "$COMMAND received an option that belongs to another command"
       ;;
     all)
       [[ -n "$DEVICE" ]] || die "all requires --device"
       [[ -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" &&
-         -z "$NGROK_REF" && "$SKIP_E2E" == false ]] ||
+         -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$SKIP_E2E" == false ]] ||
         die "all does not accept --artifact, --upstream-ref or --skip-e2e-compile"
       ;;
     help|--help|-h|"") usage; exit 0 ;;
@@ -320,6 +333,107 @@ variant_parts() {
   esac
 }
 
+latest_stable_tag_from_remote_listing() {
+  awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ {sub("refs/tags/", "", $2); print $2}' |
+    sort -V |
+    tail -1
+}
+
+resolve_upstream_channel() {
+  local channel="$1" channel_ref label sha
+  verify_upstream_remote
+  require_command git
+  case "$channel" in
+    stable)
+      label="$(git -C "$REPO_ROOT" ls-remote --tags --refs upstream 'refs/tags/v*' |
+        latest_stable_tag_from_remote_listing)"
+      [[ -n "$label" ]] || die "Official upstream has no stable vMAJOR.MINOR.PATCH tag"
+      channel_ref="refs/arcp-upstream-channels/stable"
+      git -C "$REPO_ROOT" fetch upstream "+refs/tags/$label:$channel_ref"
+      ;;
+    edge)
+      label="edge"
+      channel_ref="refs/arcp-upstream-channels/edge"
+      git -C "$REPO_ROOT" fetch upstream "+refs/tags/edge:$channel_ref"
+      ;;
+    *) die "Unknown upstream channel: $channel" ;;
+  esac
+  sha="$(git -C "$REPO_ROOT" rev-parse --verify "$channel_ref^{commit}")" ||
+    die "Cannot resolve latest $channel commit"
+  printf '%s\t%s\n' "$label" "$sha"
+}
+
+build_upstream_channel() (
+  local channel label source_sha short_sha channel_temp_dir channel_worktree channel_tools_dir
+  local source_apk output_dir output_apk output_manifest sha metadata qualified
+  local -a child_args
+  channel="$1"
+  require_clean_worktree
+  [[ "$(git -C "$REPO_ROOT" branch --show-current)" == "main" ]] ||
+    die "channel builds must start from local main"
+  IFS=$'\t' read -r label source_sha < <(resolve_upstream_channel "$channel")
+  short_sha="${source_sha:0:12}"
+  channel_temp_dir="$(mktemp -d "/tmp/arcp-$channel-build.XXXXXX")"
+  channel_worktree="$channel_temp_dir/worktree"
+  channel_tools_dir="$channel_temp_dir/tools"
+  mkdir -p "$channel_tools_dir"
+
+  cleanup_channel_build() {
+    if [[ -d "$channel_worktree" ]]; then
+      git -C "$channel_worktree" submodule deinit --force --all >/dev/null 2>&1 || true
+      git -C "$REPO_ROOT" worktree remove --force "$channel_worktree" >/dev/null 2>&1 || true
+    fi
+    [[ ! -d "$channel_temp_dir" ]] || rm -rf -- "$channel_temp_dir"
+  }
+  trap cleanup_channel_build EXIT
+
+  git -C "$REPO_ROOT" worktree add --detach "$channel_worktree" "$source_sha"
+  git -C "$channel_worktree" submodule update --init --recursive
+
+  require_command go
+  (
+    cd "$channel_worktree/vendor/cloudflared"
+    go build -o "$channel_tools_dir/cloudflared" ./cmd/cloudflared
+  )
+
+  qualified=true
+  if [[ "$SKIP_E2E" == true ]]; then qualified=false; fi
+  child_args=(build --variant "$VARIANT")
+  if [[ "$SKIP_E2E" == true ]]; then child_args+=(--skip-e2e-compile); fi
+  if ! PATH="$channel_tools_dir:$PATH" \
+    ARCP_REPO_ROOT_OVERRIDE="$channel_worktree" \
+    ARCP_CHANNEL_BUILD=true \
+    "$SCRIPT_DIR/sync-build-deploy.sh" "${child_args[@]}"; then
+    die "Latest $channel build failed for $label ($source_sha)"
+  fi
+
+  variant_parts
+  mapfile -t channel_apks < <(
+    find "$channel_worktree/app/build/outputs/apk/$FLAVOR/$BUILD_TYPE" -maxdepth 1 -type f -name '*.apk' | sort
+  )
+  ((${#channel_apks[@]} == 1)) || die "Expected exactly one $channel APK, found ${#channel_apks[@]}"
+  source_apk="${channel_apks[0]}"
+  output_dir="$REPO_ROOT/build/channels/$channel"
+  output_apk="$output_dir/android-remote-control-mcp-$channel-${VARIANT}-${short_sha}.apk"
+  output_manifest="$output_dir/manifest.json"
+  mkdir -p "$output_dir"
+  cp "$source_apk" "$output_apk"
+  sha="$(sha256sum "$output_apk" | awk '{print $1}')"
+  metadata="$(apk_metadata "$output_apk")"
+  node -e '
+    const fs=require("fs");
+    const [out,channel,label,sourceSha,variant,qualified,apk,sha,metadata]=process.argv.slice(1);
+    const [applicationId,versionCode,versionName,certificateSha256]=metadata.split("\t");
+    fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"upstream_channel_build",
+      created_at:new Date().toISOString(),channel,source_label:label,source_sha:sourceSha,variant,
+      qualified:qualified==="true",apk,sha256:sha,application_id:applicationId,
+      version_code:Number(versionCode),version_name:versionName,certificate_sha256:certificateSha256},null,2)+"\n");
+  ' "$output_manifest" "$channel" "$label" "$source_sha" "$VARIANT" "$qualified" \
+    "$(realpath "$output_apk")" "$sha" "$metadata"
+  printf 'Latest %s build complete: %s (%s)\nAPK: %s\nManifest: %s\n' \
+    "$channel" "$label" "$source_sha" "$output_apk" "$output_manifest"
+)
+
 prepare_native_tunnel_payload() {
   require_command make
   make -C "$REPO_ROOT" compile-cloudflared compile-ngrok-native
@@ -371,7 +485,9 @@ build_variant() {
   require_command node
   variant_parts
   cd "$REPO_ROOT"
-  scripts/verify-device-configs.sh
+  if [[ "${ARCP_CHANNEL_BUILD:-false}" != true ]]; then
+    scripts/verify-device-configs.sh
+  fi
   prepare_native_tunnel_payload
   ./gradlew ktlintCheck detekt
   ./gradlew :app:test :privacy:test :privacy-benchmark:test
@@ -511,7 +627,15 @@ validate_contract
 case "$COMMAND" in
   check) check_device ;;
   sync) sync_upstream ;;
-  build) build_variant ;;
+  build)
+    if [[ "$LATEST_STABLE" == true ]]; then
+      build_upstream_channel stable
+    elif [[ "$LATEST_EDGE" == true ]]; then
+      build_upstream_channel edge
+    else
+      build_variant
+    fi
+    ;;
   deploy) deploy_artifact ;;
   all)
     if [[ "$APPLY" == false ]]; then
