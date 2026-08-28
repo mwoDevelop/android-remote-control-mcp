@@ -60,7 +60,7 @@ The app runs directly on your Android device (or emulator) and exposes an HTTP s
 - Auto-start on boot
 - Remote access tunnels via Cloudflare Quick Tunnels or ngrok (public HTTPS URL)
 
-### 58 MCP Tools across 15 Categories
+### 61 MCP Tools across 15 Categories
 
 Screen introspection, system actions, touch actions, gestures, node actions, text input, utilities, file operations, app management, camera, intents, notifications, location, and sharing.
 
@@ -83,7 +83,7 @@ See [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) for the full tool reference with inpu
 
 | Feature | This project | [mobile-mcp] | [Android-MCP] | [android-mcp-server] | [adb-mcp] | [droidrun-mcp] |
 |---------|:-:|:-:|:-:|:-:|:-:|:-:|
-| MCP tools | 58 | 21 | 11 | 5 | 10 | 11 |
+| MCP tools | 61 | 21 | 11 | 5 | 10 | 11 |
 | Runs on the phone (no ADB) | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
 | Action latency | 10-100 ms | 1-4 s | 1-4 s | 1-4 s | 1-4 s | 1-4 s |
 | Works over the internet | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
@@ -341,7 +341,7 @@ This fork keeps reproducible, owner-specific deployment snapshots under `myconf/
 | Device | Primary MCP endpoint | Remote-access policy | Captured provisioning state |
 |---|---|---|---|
 | [Xiaomi 11T (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational at the 2026-08-26 capture |
-| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin refresh pending (58 tools) |
+| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin refreshed (61 tools) |
 
 Each device directory contains the same common configuration areas:
 
@@ -397,8 +397,8 @@ process `PATH`; the Cloudflare integration gate therefore does not depend on a s
 Production and debug builds register exactly four reviewed Shizuku tools: `admin_get_top_window`, the standard visible
 `admin_request_shizuku_permission` flow, typed `admin_uninstall_app`, and zero-argument `admin_unlock_device`. The uninstall operation removes a package only
 for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators and other critical
-system packages. These tools accept only the configured administrator bearer and reject OAuth clients such as ChatGPT.
-The first three tools require the administrator bearer. Remote unlock additionally accepts only the exact OAuth client
+system packages. The first three tools require the administrator bearer and reject OAuth clients such as ChatGPT.
+Remote unlock additionally accepts only the exact OAuth client
 configured locally during encrypted provisioning, and only after a one-shot local arm valid for at most 15 minutes.
 They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
 activation after a reboot remains a manual administrator gate.
