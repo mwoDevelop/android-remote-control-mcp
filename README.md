@@ -340,7 +340,7 @@ This fork keeps reproducible, owner-specific deployment snapshots under `myconf/
 
 | Device | Primary MCP endpoint | Remote-access policy | Captured provisioning state |
 |---|---|---|---|
-| [Xiaomi 11T (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational at the 2026-08-26 capture |
+| [Xiaomi 11T Pro (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | ARCP and Shizuku operational on 2026-08-28 |
 | [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin refreshed (61 tools) |
 
 Each device directory contains the same common configuration areas:

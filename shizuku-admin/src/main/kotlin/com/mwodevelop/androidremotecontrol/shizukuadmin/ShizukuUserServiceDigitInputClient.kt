@@ -93,7 +93,7 @@ internal class ShizukuUserServiceDigitInputClient(
 
     private companion object {
         const val SHELL_UID = 2000
-        const val USER_SERVICE_VERSION = 1
+        const val USER_SERVICE_VERSION = 2
         const val USER_SERVICE_TAG = "arcp_remote_unlock_input_v1"
         const val USER_SERVICE_PROCESS_SUFFIX = "remote_unlock_input"
         const val BIND_AND_CALL_TIMEOUT_MS = 10_000L

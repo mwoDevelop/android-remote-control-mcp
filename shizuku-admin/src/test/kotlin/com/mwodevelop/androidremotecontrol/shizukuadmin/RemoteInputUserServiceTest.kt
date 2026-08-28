@@ -55,6 +55,8 @@ class RemoteInputUserServiceTest {
                 pinSurfacePresenter = PinSurfacePresenter { events.add("pin-surface") },
                 pauseAfterWake = {},
                 pauseAfterPinSurface = {},
+                pauseAfterDigit = { events.add("digit-pause") },
+                pauseBeforeSubmit = { events.add("submit-pause") },
             )
 
         assertEquals(true, injector.inject(byteArrayOf(9, 0, 4, 1)))
@@ -64,9 +66,14 @@ class RemoteInputUserServiceTest {
                 "key:${KeyEvent.KEYCODE_WAKEUP}",
                 "pin-surface",
                 "key:${KeyEvent.KEYCODE_9}",
+                "digit-pause",
                 "key:${KeyEvent.KEYCODE_0}",
+                "digit-pause",
                 "key:${KeyEvent.KEYCODE_4}",
+                "digit-pause",
                 "key:${KeyEvent.KEYCODE_1}",
+                "digit-pause",
+                "submit-pause",
                 "key:${KeyEvent.KEYCODE_ENTER}",
             ),
             events,
