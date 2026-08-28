@@ -113,6 +113,8 @@ internal class InstrumentationDigitSequenceInjector(
     private val pinSurfacePresenter: PinSurfacePresenter = InstrumentationPinSurfacePresenter(),
     private val pauseAfterWake: () -> Unit = { SystemClock.sleep(WAKE_SETTLE_MS) },
     private val pauseAfterPinSurface: () -> Unit = { SystemClock.sleep(PIN_SURFACE_SETTLE_MS) },
+    private val pauseAfterDigit: () -> Unit = { SystemClock.sleep(DIGIT_SETTLE_MS) },
+    private val pauseBeforeSubmit: () -> Unit = { SystemClock.sleep(SUBMIT_SETTLE_MS) },
 ) : DigitSequenceInjector {
     override fun inject(digits: ByteArray): Boolean {
         validateDigits(digits)
@@ -122,14 +124,18 @@ internal class InstrumentationDigitSequenceInjector(
         pauseAfterPinSurface()
         digits.forEach { digit ->
             keyEventSender.sendKeyDownUp(KeyEvent.KEYCODE_0 + digit.toInt())
+            pauseAfterDigit()
         }
+        pauseBeforeSubmit()
         keyEventSender.sendKeyDownUp(KeyEvent.KEYCODE_ENTER)
         return true
     }
 
     private companion object {
         const val WAKE_SETTLE_MS = 700L
-        const val PIN_SURFACE_SETTLE_MS = 700L
+        const val PIN_SURFACE_SETTLE_MS = 1_500L
+        const val DIGIT_SETTLE_MS = 100L
+        const val SUBMIT_SETTLE_MS = 300L
     }
 }
 

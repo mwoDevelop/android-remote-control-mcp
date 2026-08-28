@@ -22,6 +22,7 @@ const commonFiles = [
   'snapshot.json',
   'android/config.json',
   'android/apply-config.sh',
+  'android/provision-unlock-pin.sh',
   'chatgpt/connectors.json',
   'cloudflare/.terraform.lock.hcl',
   'cloudflare/imports.tf',
@@ -96,6 +97,7 @@ for (const device of devices) {
   }
 
   const applyScript = fs.readFileSync(path.join(deviceRoot, 'android/apply-config.sh'), 'utf8');
+  const unlockScript = fs.readFileSync(path.join(deviceRoot, 'android/provision-unlock-pin.sh'), 'utf8');
   if (!applyScript.includes(`--es tool_permissions "'{\\"disabledTools\\":[],\\"disabledParams\\":{}}'"`)) {
     fail(`${device}/android/apply-config.sh must use ToolPermissionsConfig JSON field names`);
   }
@@ -105,8 +107,26 @@ for (const device of devices) {
   if (!applyScript.includes(`--es device_slug "''"`)) {
     fail(`${device}/android/apply-config.sh must preserve the empty device slug through adb shell quoting`);
   }
+  if (!applyScript.includes('adb_shell_stdin am broadcast') ||
+      applyScript.includes('"${ADB[@]}" shell am broadcast')) {
+    fail(`${device}/android/apply-config.sh must keep configuration secrets out of the adb shell command line`);
+  }
   if (androidConfig.remote_access?.cloudflare?.extra_arguments !== '') {
     fail(`${device}/android/config.json must not use the broken token-mode --edge workaround`);
+  }
+  if (!unlockScript.includes('--extra "key_version:s:${key_version}"') ||
+      !unlockScript.includes('--extra "ciphertext:s:${ciphertext}"')) {
+    fail(`${device}/android/provision-unlock-pin.sh must use content-call KEY:TYPE:VALUE extras`);
+  }
+  if (unlockScript.includes('s:key_version:') || unlockScript.includes('s:ciphertext:')) {
+    fail(`${device}/android/provision-unlock-pin.sh contains reversed content-call extra syntax`);
+  }
+  if (!unlockScript.includes('configured=true')) {
+    fail(`${device}/android/provision-unlock-pin.sh must verify that provisioning was persisted`);
+  }
+  if (!unlockScript.includes('CredentialType:[[:space:]]+PIN') ||
+      !unlockScript.includes('require_pin_screen_lock || exit 1')) {
+    fail(`${device}/android/provision-unlock-pin.sh must reject non-PIN Android screen locks`);
   }
 }
 
@@ -123,6 +143,9 @@ if (!process.exitCode) {
   console.log('OK: [REDACTED_DEVICE_ALIAS] has the optional ngrok extension; [REDACTED_DEVICE_ALIAS] is Cloudflare-only.');
   console.log('OK: both devices restore tool permissions using application JSON field names.');
   console.log('OK: both devices restore empty ADB string values without argument shifting.');
+  console.log('OK: both devices send configuration broadcasts through adb shell stdin.');
   console.log('OK: neither device uses the broken token-mode --edge workaround.');
+  console.log('OK: both PIN provisioning scripts validate Android content-call persistence.');
+  console.log('OK: both PIN provisioning scripts reject pattern and password screen locks.');
 }
 NODE
