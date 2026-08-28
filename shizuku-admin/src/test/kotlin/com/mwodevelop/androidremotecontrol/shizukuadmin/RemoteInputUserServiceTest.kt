@@ -48,25 +48,28 @@ class RemoteInputUserServiceTest {
 
     @Test
     fun `instrumentation injector emits only fixed wake digits and enter`() {
-        val keyCodes = mutableListOf<Int>()
+        val events = mutableListOf<String>()
         val injector =
             InstrumentationDigitSequenceInjector(
-                keyEventSender = KeyEventSender { keyCodes.add(it) },
+                keyEventSender = KeyEventSender { events.add("key:$it") },
+                pinSurfacePresenter = PinSurfacePresenter { events.add("pin-surface") },
                 pauseAfterWake = {},
+                pauseAfterPinSurface = {},
             )
 
         assertEquals(true, injector.inject(byteArrayOf(9, 0, 4, 1)))
 
         assertEquals(
             listOf(
-                KeyEvent.KEYCODE_WAKEUP,
-                KeyEvent.KEYCODE_9,
-                KeyEvent.KEYCODE_0,
-                KeyEvent.KEYCODE_4,
-                KeyEvent.KEYCODE_1,
-                KeyEvent.KEYCODE_ENTER,
+                "key:${KeyEvent.KEYCODE_WAKEUP}",
+                "pin-surface",
+                "key:${KeyEvent.KEYCODE_9}",
+                "key:${KeyEvent.KEYCODE_0}",
+                "key:${KeyEvent.KEYCODE_4}",
+                "key:${KeyEvent.KEYCODE_1}",
+                "key:${KeyEvent.KEYCODE_ENTER}",
             ),
-            keyCodes,
+            events,
         )
     }
 

@@ -127,10 +127,10 @@ typed mechanism is proven without putting a PIN in a shell command.
 
 ### Task 1.2 — Live [REDACTED_DEVICE_ALIAS] feasibility gate
 
-- [ ] Use a temporary in-memory test sequence supplied locally by the administrator; do not persist or log it.
+- [x] Use a temporary in-memory test sequence supplied locally by the administrator; do not persist or log it.
 - [ ] Verify wake/display transition and digit entry on the actual Samsung secure PIN screen with screen on and screen
   off/dozing.
-- [ ] Verify the final state through `KeyguardManager`, not by assuming successful input means unlock.
+- [x] Verify the final state through `KeyguardManager`, not by assuming successful input means unlock.
 - [ ] Inspect `logcat`, ARCP server logs and Shizuku process arguments for the test digits without printing them in the
   test report; record only pass/fail.
 - [ ] If secure keyguard rejects direct typed input, STOP: keep the production tool absent and document the unsupported
@@ -377,7 +377,7 @@ without the PIN entering network traffic, logs or process arguments.
 
 ### Task 7.3 — Definition of Done
 
-- [ ] Feasibility passed on the real secure Samsung keyguard without shell argv secrets.
+- [x] Feasibility passed on the real secure Samsung keyguard without shell argv secrets.
 - [ ] Device-bound encryption, backup exclusion and provisioning tests passed.
 - [ ] Exact ChatGPT OAuth client authorization and all negative authorization tests passed.
 - [ ] Owner-signed [REDACTED_DEVICE_ALIAS] deployment and complete live matrix passed.
@@ -561,6 +561,20 @@ blocked until the owner saves `[REDACTED_DEVICE_ALIAS]_PIN='...'` without disclo
 2. Remediate child-environment leakage in existing scripts and add regression tests before adding `[REDACTED_DEVICE_ALIAS]_PIN` support.
 3. Implement the narrow non-daemon AIDL Shizuku UserService and debug `FLAG_SECURE` one-shot feasibility harness.
 4. Build/install an owner-signed [REDACTED_DEVICE_ALIAS] update and pass the real secure-keyguard gate without persistent credential state.
+
+### RF-009 — LIVE FINDING: pointer injection must target the system input service
+
+The first [REDACTED_DEVICE_ALIAS] feasibility attempt proved that `Instrumentation.sendPointerSync` cannot present Samsung's secure PIN
+surface because Android confines that API to windows owned by the instrumented application. The digit key events were
+not the failing primitive; the fixed upward gesture failed before digit injection.
+
+Applied amendment:
+
+- Keep the gesture fixed, bounded and caller-unconfigurable inside the shell-UID Shizuku UserService.
+- Inject its `MotionEvent` sequence directly through Android's input service from that privileged process; do not add a
+  hidden-API bypass library, app-process reflection, raw Binder calls, a generic input interface, or a shell fallback.
+- Continue using typed digit key events and zero every digit buffer in `finally`.
+- The corrected path passed the real [REDACTED_DEVICE_ALIAS] secure-keyguard test and `KeyguardManager` confirmed the unlocked state.
 5. Implement device-bound storage, replay-safe provisioning and one-shot arm/latch semantics.
 6. Implement sealed OAuth principal, durable revocation/tombstones and exact-client unlock policy.
 7. Register the zero-argument production tool, complete automated/security tests, deploy with `adb install -r`, provision

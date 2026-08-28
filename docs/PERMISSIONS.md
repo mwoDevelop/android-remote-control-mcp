@@ -47,6 +47,13 @@ adb shell pm grant <app-id> android.permission.READ_MEDIA_AUDIO
 
 ## Special access
 
+### ADB-only remote-unlock provisioning
+
+The exported `RemoteUnlockProvisioningProvider` requires the platform `android.permission.DUMP` permission. Android's
+activity manager therefore admits the ADB shell UID while rejecting ordinary installed applications. The provider
+returns only a public key and bounded status metadata and accepts only an RSA-OAEP ciphertext, exact OAuth client ID,
+and enable/arm/clear controls. It never accepts a plaintext PIN.
+
 ### Accessibility Service
 
 Required for UI introspection, action execution, and screenshots (core functionality).

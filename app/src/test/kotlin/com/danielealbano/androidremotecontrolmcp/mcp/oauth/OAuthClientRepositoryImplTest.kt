@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
@@ -118,6 +119,26 @@ class OAuthClientRepositoryImplTest {
                 repository.register("Claude", listOf("https://claude.ai/api/mcp/auth_callback"), "web", null, 1L)
             repository.revoke(created.clientId)
             assertNull(repository.getClient(created.clientId))
+        }
+
+    @Test
+    @DisplayName("revoked client cannot be restored, including after repository restart")
+    fun revokedClientCannotBeRestored() =
+        testScope.runTest {
+            val created =
+                repository.register("ChatGPT", listOf("https://chatgpt.com/connector/oauth/example"), "web", null, 1L)
+            repository.revoke(created.clientId)
+
+            assertInstanceOf(
+                IllegalStateException::class.java,
+                runCatching { repository.restoreRegistration(created) }.exceptionOrNull(),
+            )
+            val newRepo = OAuthClientRepositoryImpl(dataStore, serverLog)
+            assertInstanceOf(
+                IllegalStateException::class.java,
+                runCatching { newRepo.restoreRegistration(created) }.exceptionOrNull(),
+            )
+            assertNull(newRepo.getClient(created.clientId))
         }
 
     @Test

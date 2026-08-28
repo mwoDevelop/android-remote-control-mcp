@@ -394,21 +394,28 @@ class AdbConfigHandler(
 
             else -> {
                 val nowMs = System.currentTimeMillis()
+                var restored = 0
                 registrations.forEach { registration ->
-                    repository.restoreRegistration(
-                        OAuthClient(
-                            clientId = registration.clientId,
-                            clientName = registration.clientName,
-                            redirectUris = registration.redirectUris,
-                            applicationType = registration.applicationType,
-                            logoUri = registration.logoUri,
-                            createdAtMs = nowMs,
-                            lastUsedAtMs = nowMs,
-                            currentRefreshJti = null,
-                        ),
-                    )
+                    runCatching {
+                        repository.restoreRegistration(
+                            OAuthClient(
+                                clientId = registration.clientId,
+                                clientName = registration.clientName,
+                                redirectUris = registration.redirectUris,
+                                applicationType = registration.applicationType,
+                                logoUri = registration.logoUri,
+                                createdAtMs = nowMs,
+                                lastUsedAtMs = nowMs,
+                                currentRefreshJti = null,
+                            ),
+                        )
+                    }.onSuccess {
+                        restored += 1
+                    }.onFailure {
+                        Log.w(TAG, "Ignoring revoked OAuth client registration")
+                    }
                 }
-                Log.i(TAG, "Restored ${registrations.size} OAuth client registration(s)")
+                Log.i(TAG, "Restored $restored OAuth client registration(s)")
             }
         }
     }

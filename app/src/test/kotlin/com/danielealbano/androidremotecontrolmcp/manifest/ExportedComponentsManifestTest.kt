@@ -57,6 +57,7 @@ class ExportedComponentsManifestTest {
         listOf(
             ".services.mcp.AdbConfigReceiver",
             ".services.mcp.AdbServiceTrampolineActivity",
+            ".security.remoteunlock.RemoteUnlockProvisioningProvider",
         ).forEach { name ->
             val component = byName[name] ?: error("$name is not declared in $MAIN_MANIFEST")
             assertEquals(DUMP, component.permission, "$name must be gated on DUMP")

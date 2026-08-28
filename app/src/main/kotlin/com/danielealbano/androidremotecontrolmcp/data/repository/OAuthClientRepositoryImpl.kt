@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.danielealbano.androidremotecontrolmcp.data.model.ServerLogEntry
 import com.danielealbano.androidremotecontrolmcp.di.OAuthClientsDataStore
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthClient
@@ -37,12 +38,14 @@ class OAuthClientRepositoryImpl
         private val snapshot = MutableStateFlow<List<OAuthClient>>(emptyList())
         private val mutex = Mutex()
         private var seeded = false
+        private var revokedClientIds: Set<String> = emptySet()
 
         /** Loads the persisted list into the snapshot once. MUST be called with [mutex] held. */
         private suspend fun seedLocked() {
             if (seeded) return
             val stored = dataStore.data.first()[OAUTH_CLIENTS_KEY]
             snapshot.value = parse(stored)
+            revokedClientIds = dataStore.data.first()[REVOKED_CLIENT_IDS_KEY].orEmpty()
             seeded = true
         }
 
@@ -54,7 +57,10 @@ class OAuthClientRepositoryImpl
         /** Persists [list] to the snapshot and disk. MUST be called with [mutex] held. */
         private suspend fun persist(list: List<OAuthClient>) {
             snapshot.value = list
-            dataStore.edit { it[OAUTH_CLIENTS_KEY] = json.encodeToString(list) }
+            dataStore.edit {
+                it[OAUTH_CLIENTS_KEY] = json.encodeToString(list)
+                it[REVOKED_CLIENT_IDS_KEY] = revokedClientIds
+            }
         }
 
         override fun observeClients(): Flow<List<OAuthClient>> =
@@ -117,6 +123,7 @@ class OAuthClientRepositoryImpl
         override suspend fun restoreRegistration(client: OAuthClient): OAuthClient =
             mutex.withLock {
                 seedLocked()
+                check(client.clientId !in revokedClientIds) { "Refusing to restore a revoked OAuth client ID" }
                 val existing = snapshot.value.filterNot { it.clientId == client.clientId }
                 val combined = existing + client
                 val finalList =
@@ -142,6 +149,7 @@ class OAuthClientRepositoryImpl
                 val removed = snapshot.value.firstOrNull { it.clientId == clientId }
                 val updated = snapshot.value.filterNot { it.clientId == clientId }
                 if (updated.size != snapshot.value.size) {
+                    revokedClientIds = revokedClientIds + clientId
                     persist(updated)
                     serverLog.log(
                         ServerLogEntry.Type.OAUTH,
@@ -193,5 +201,6 @@ class OAuthClientRepositoryImpl
 
         private companion object {
             private val OAUTH_CLIENTS_KEY = stringPreferencesKey("oauth_clients")
+            private val REVOKED_CLIENT_IDS_KEY = stringSetPreferencesKey("revoked_oauth_client_ids")
         }
     }

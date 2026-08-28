@@ -24,8 +24,14 @@ class OAuthAccessValidator(
     suspend fun validate(
         token: String,
         canonicalResource: String,
-    ): Boolean {
-        val claims = tokenService.verifyAccessToken(token) ?: return false
+    ): Boolean = validateClient(token, canonicalResource) != null
+
+    /** Returns only the verified, live server-issued client ID for request-scoped authorization. */
+    suspend fun validateClient(
+        token: String,
+        canonicalResource: String,
+    ): String? {
+        val claims = tokenService.verifyAccessToken(token) ?: return null
         val client = clientRepository.getClient(claims.clientId)
         val valid = OAuthPolicy.resourceMatches(claims.audience, canonicalResource) && client != null
         if (valid && client != null) {
@@ -52,7 +58,7 @@ class OAuthAccessValidator(
                 pruneDebounceMap()
             }
         }
-        return valid
+        return claims.clientId.takeIf { valid }
     }
 
     /** Bounds the debounce map so revoked/re-registered clients (each a new id) cannot grow it forever. */

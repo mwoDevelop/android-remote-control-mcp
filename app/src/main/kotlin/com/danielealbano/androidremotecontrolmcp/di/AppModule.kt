@@ -25,6 +25,8 @@ import com.danielealbano.androidremotecontrolmcp.privacy.PrivacyPipelineImpl
 import com.danielealbano.androidremotecontrolmcp.privacy.model.PrivacyModelStore
 import com.danielealbano.androidremotecontrolmcp.privacy.ner.OrtPiiModelRunner
 import com.danielealbano.androidremotecontrolmcp.privacy.ner.PiiModelInference
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.AndroidRemoteUnlockCredentialStore
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockCredentialStore
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityNodeCache
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityNodeCacheImpl
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityServiceProvider
@@ -160,6 +162,11 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindOAuthClientRepository(impl: OAuthClientRepositoryImpl): OAuthClientRepository
+
+    /** Binds the device-bound, app-private remote-unlock credential store. */
+    @Binds
+    @Singleton
+    abstract fun bindRemoteUnlockCredentialStore(impl: AndroidRemoteUnlockCredentialStore): RemoteUnlockCredentialStore
 
     /** Binds the offline IP-geolocation resolver used to annotate connection requests. */
     @Binds

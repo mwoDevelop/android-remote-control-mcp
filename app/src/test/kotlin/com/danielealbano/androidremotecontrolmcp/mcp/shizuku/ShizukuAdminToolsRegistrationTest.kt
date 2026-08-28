@@ -1,6 +1,10 @@
 package com.danielealbano.androidremotecontrolmcp.mcp.shizuku
 
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.LoggedToolRegistrar
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockCredentialStore
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockOutcome
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockProvisioningKey
+import com.danielealbano.androidremotecontrolmcp.security.remoteunlock.RemoteUnlockStatus
 import com.danielealbano.androidremotecontrolmcp.testutil.RecordingServerLogRepository
 import com.mwodevelop.androidremotecontrol.shizukuadmin.ApplicationUninstallResult
 import com.mwodevelop.androidremotecontrol.shizukuadmin.PrivilegedAdminBackend
@@ -45,6 +49,8 @@ class ShizukuAdminToolsRegistrationTest {
             FakeBackend,
             PrivilegedToolAuthorizer(),
             ProtectedPackagePolicy { null },
+            { RemoteUnlockOutcome.UNAVAILABLE },
+            FakeCredentialStore,
             toolNamePrefix = "",
             enabledTools = enabledTools,
         )
@@ -68,5 +74,31 @@ class ShizukuAdminToolsRegistrationTest {
 
         override suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult =
             ApplicationUninstallResult(packageName, 0)
+    }
+
+    private object FakeCredentialStore : RemoteUnlockCredentialStore {
+        override fun provisioningKey() = RemoteUnlockProvisioningKey(1, "test")
+
+        override fun status() = RemoteUnlockStatus(false, false, null, 0, false)
+
+        override fun provision(
+            keyVersion: Int,
+            ciphertextBase64: String,
+        ) = Unit
+
+        override fun setPolicy(
+            enabled: Boolean,
+            authorizedClientId: String?,
+        ) = Unit
+
+        override fun arm(nowMs: Long) = Unit
+
+        override fun consumeArm(nowMs: Long) = false
+
+        override fun recordFailure() = Unit
+
+        override fun clear() = Unit
+
+        override suspend fun <T> withDecryptedDigits(block: suspend (ByteArray) -> T): T = block(byteArrayOf())
     }
 }

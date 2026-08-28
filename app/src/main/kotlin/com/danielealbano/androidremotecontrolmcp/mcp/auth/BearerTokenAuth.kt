@@ -50,6 +50,7 @@ class McpAuthConfig {
     var expectedToken: String = ""
     var oauthEnabled: Boolean = false
     var validateOAuthToken: (suspend (token: String, canonicalResource: String) -> Boolean)? = null
+    var validateOAuthClient: (suspend (token: String, canonicalResource: String) -> String?)? = null
     var baseUrlOf: (ApplicationCall) -> String = { deriveBaseUrl(it) }
     var excludedPaths: Set<String> = emptySet()
     var excludedPathPrefixes: Set<String> = emptySet()
@@ -85,6 +86,7 @@ val McpAuthPlugin =
         val expectedToken = pluginConfig.expectedToken
         val oauthEnabled = pluginConfig.oauthEnabled
         val validateOAuthToken = pluginConfig.validateOAuthToken
+        val validateOAuthClient = pluginConfig.validateOAuthClient
         val baseUrlOf = pluginConfig.baseUrlOf
         val excludedPaths = pluginConfig.excludedPaths
         val excludedPathPrefixes = pluginConfig.excludedPathPrefixes
@@ -135,11 +137,18 @@ val McpAuthPlugin =
             }
 
             // OAuth access-token path.
-            if (oauthEnabled && validateOAuthToken != null &&
-                validateOAuthToken(providedToken, canonicalResource(baseUrlOf(call)))
-            ) {
-                call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.OAUTH)
-                return@intercept
+            if (oauthEnabled) {
+                val resource = canonicalResource(baseUrlOf(call))
+                val oauthClientId = validateOAuthClient?.invoke(providedToken, resource)
+                if (oauthClientId != null) {
+                    call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.OAUTH)
+                    call.attributes.put(McpOAuthClientIdAttribute, oauthClientId)
+                    return@intercept
+                }
+                if (validateOAuthClient == null && validateOAuthToken?.invoke(providedToken, resource) == true) {
+                    call.attributes.put(McpAuthClientClassAttribute, McpAuthClientClass.OAUTH)
+                    return@intercept
+                }
             }
 
             // Fail closed.
