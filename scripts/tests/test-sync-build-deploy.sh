@@ -84,6 +84,27 @@ test_latest_stable_selection() {
   pass "latest stable accepts only strict release tags and uses version order"
 }
 
+test_host_cloudflared_preparation() {
+  local repo
+  repo="$(new_repo)"
+  mkdir -p "$repo/vendor/cloudflared"
+  (
+    eval "$(sed -n '/^prepare_host_cloudflared() {/,/^}/p' "$SOURCE_SCRIPT")"
+    require_command() { :; }
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    go() {
+      [[ "$1" == "build" && "$2" == "-o" ]]
+      printf '#!/usr/bin/env sh\nexit 0\n' >"$3"
+      chmod +x "$3"
+    }
+    REPO_ROOT="$repo"
+    prepare_host_cloudflared
+    [[ -x "$repo/build/host-tools/cloudflared" ]]
+    [[ ":$PATH:" == *":$repo/build/host-tools:"* ]]
+  )
+  pass "build prepares pinned host cloudflared and adds it to PATH"
+}
+
 test_unknown_flag() {
   local repo
   repo="$(new_repo)"
@@ -278,6 +299,7 @@ test_tunnel_payload_gate() {
 test_help
 test_channel_arguments
 test_latest_stable_selection
+test_host_cloudflared_preparation
 test_unknown_flag
 test_sync_preview
 test_vendor_sync_preview

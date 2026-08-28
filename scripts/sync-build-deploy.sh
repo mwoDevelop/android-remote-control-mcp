@@ -364,7 +364,7 @@ resolve_upstream_channel() {
 }
 
 build_upstream_channel() (
-  local channel label source_sha short_sha channel_temp_dir channel_worktree channel_tools_dir
+  local channel label source_sha short_sha channel_temp_dir channel_worktree
   local source_apk output_dir output_apk output_manifest sha metadata qualified
   local -a child_args
   channel="$1"
@@ -375,8 +375,6 @@ build_upstream_channel() (
   short_sha="${source_sha:0:12}"
   channel_temp_dir="$(mktemp -d "/tmp/arcp-$channel-build.XXXXXX")"
   channel_worktree="$channel_temp_dir/worktree"
-  channel_tools_dir="$channel_temp_dir/tools"
-  mkdir -p "$channel_tools_dir"
 
   cleanup_channel_build() {
     if [[ -d "$channel_worktree" ]]; then
@@ -390,18 +388,11 @@ build_upstream_channel() (
   git -C "$REPO_ROOT" worktree add --detach "$channel_worktree" "$source_sha"
   git -C "$channel_worktree" submodule update --init --recursive
 
-  require_command go
-  (
-    cd "$channel_worktree/vendor/cloudflared"
-    go build -o "$channel_tools_dir/cloudflared" ./cmd/cloudflared
-  )
-
   qualified=true
   if [[ "$SKIP_E2E" == true ]]; then qualified=false; fi
   child_args=(build --variant "$VARIANT")
   if [[ "$SKIP_E2E" == true ]]; then child_args+=(--skip-e2e-compile); fi
-  if ! PATH="$channel_tools_dir:$PATH" \
-    ARCP_REPO_ROOT_OVERRIDE="$channel_worktree" \
+  if ! ARCP_REPO_ROOT_OVERRIDE="$channel_worktree" \
     ARCP_CHANNEL_BUILD=true \
     "$SCRIPT_DIR/sync-build-deploy.sh" "${child_args[@]}"; then
     die "Latest $channel build failed for $label ($source_sha)"
@@ -433,6 +424,21 @@ build_upstream_channel() (
   printf 'Latest %s build complete: %s (%s)\nAPK: %s\nManifest: %s\n' \
     "$channel" "$label" "$source_sha" "$output_apk" "$output_manifest"
 )
+
+prepare_host_cloudflared() {
+  local host_tools_dir host_cloudflared
+  require_command go
+  host_tools_dir="$REPO_ROOT/build/host-tools"
+  host_cloudflared="$host_tools_dir/cloudflared"
+  mkdir -p "$host_tools_dir"
+  (
+    cd "$REPO_ROOT/vendor/cloudflared"
+    go build -o "$host_cloudflared" ./cmd/cloudflared
+  )
+  [[ -x "$host_cloudflared" ]] || die "Host cloudflared build did not create an executable"
+  PATH="$host_tools_dir:$PATH"
+  export PATH
+}
 
 prepare_native_tunnel_payload() {
   require_command make
@@ -488,6 +494,7 @@ build_variant() {
   if [[ "${ARCP_CHANNEL_BUILD:-false}" != true ]]; then
     scripts/verify-device-configs.sh
   fi
+  prepare_host_cloudflared
   prepare_native_tunnel_payload
   ./gradlew ktlintCheck detekt
   ./gradlew :app:test :privacy:test :privacy-benchmark:test
