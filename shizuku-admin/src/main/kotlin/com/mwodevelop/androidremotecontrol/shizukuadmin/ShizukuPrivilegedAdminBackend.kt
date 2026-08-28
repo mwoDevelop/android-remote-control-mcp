@@ -58,9 +58,12 @@ internal data class CommandLimits(
     val maxStderrBytes: Int,
 )
 
+@Suppress("TooManyFunctions")
 internal class ShizukuPrivilegedAdminBackend(
     private val stateProbe: ShizukuStateProbe,
     private val commandExecutor: PrivilegedCommandExecutor,
+    private val digitInputClient: PrivilegedDigitInputClient =
+        PrivilegedDigitInputClient { throw PrivilegedAdminException.Unavailable() },
 ) : PrivilegedAdminBackend {
     override fun readiness(): PrivilegedAdminReadiness =
         try {
@@ -107,6 +110,22 @@ internal class ShizukuPrivilegedAdminBackend(
             )
         validateUninstallResult(result)
         return ApplicationUninstallResult(packageName = packageName, androidUserId = ANDROID_USER_ID)
+    }
+
+    override suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean {
+        requireReady()
+        val localCopy = digits.copyOf()
+        return try {
+            validateDigits(localCopy)
+            digitInputClient.injectDigits(localCopy)
+        } catch (e: PrivilegedAdminException) {
+            throw e
+        } catch (_: Exception) {
+            throw PrivilegedAdminException.ExecutionFailed()
+        } finally {
+            localCopy.fill(0)
+            digits.fill(0)
+        }
     }
 
     private fun requireReady() {

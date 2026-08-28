@@ -158,8 +158,28 @@ resolve_android_tool() {
 }
 
 read_secret_variable() {
-  local file="$1" variable="$2"
-  bash -c 'set -a; source "$1"; value="${!2:-}"; printf "%s" "$value"' _ "$file" "$variable"
+  local file="$1" variable="$2" line raw="" matches=0
+  [[ "$variable" =~ ^[A-Z][A-Z0-9_]*$ ]] || die "Invalid secret variable name"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "$variable="*)
+        raw="${line#*=}"
+        matches=$((matches + 1))
+        ;;
+      "export $variable="*)
+        raw="${line#*=}"
+        matches=$((matches + 1))
+        ;;
+    esac
+  done <"$file"
+  ((matches <= 1)) || die "Duplicate $variable assignment in device secrets file"
+  ((matches == 1)) || return 0
+  if [[ "$raw" == \'*\' && "$raw" == *\' && ${#raw} -ge 2 ]]; then
+    raw="${raw:1:${#raw}-2}"
+  elif [[ "$raw" == \"*\" && "$raw" == *\" && ${#raw} -ge 2 ]]; then
+    raw="${raw:1:${#raw}-2}"
+  fi
+  printf '%s' "$raw"
 }
 
 validate_secret_file() {
@@ -610,7 +630,7 @@ deploy_artifact() {
   [[ "$(adb_target shell pm path "$expected_package" | tr -d '\r')" == package:* ]] || die "Package not installed after adb install -r"
   apply_script="$REPO_ROOT/myconf/$DEVICE/android/apply-config.sh"
   verify_script="$REPO_ROOT/myconf/$DEVICE/scripts/verify.sh"
-  ADB_SERIAL="$SERIAL" "$apply_script" --restart
+  env -u [REDACTED_DEVICE_ALIAS]_PIN ADB_SERIAL="$SERIAL" "$apply_script" --restart
   verify_loopback_binding
   "$verify_script" --live
   manifest="$(write_deployment_manifest PENDING_MANUAL_GATES)"

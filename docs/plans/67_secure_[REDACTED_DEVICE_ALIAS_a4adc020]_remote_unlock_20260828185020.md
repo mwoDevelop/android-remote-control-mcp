@@ -117,12 +117,12 @@ typed mechanism is proven without putting a PIN in a shell command.
 
 ### Task 1.1 — Add a non-secret typed input spike
 
-- [ ] Extend `PrivilegedAdminBackend` with an internal typed key-event operation that accepts only digit key codes and
+- [x] Extend `PrivilegedAdminBackend` with an internal typed key-event operation that accepts only digit key codes and
   a final Enter action; do not expose a public generic key-event MCP tool.
-- [ ] Implement event injection directly through the Shizuku-privileged Android input service/API. No child process may
+- [x] Implement event injection directly through the Shizuku-privileged Android input service/API. No child process may
   contain entered digits in its command or arguments.
-- [ ] Bound the sequence length, timeout and accepted key-code set. Reject all non-digit text and metacharacters.
-- [ ] Keep the spike unreachable from production MCP registration.
+- [x] Bound the sequence length, timeout and accepted key-code set. Reject all non-digit text and metacharacters.
+- [x] Keep the spike unreachable from production MCP registration.
 - [ ] Unit-test validation, timeout, binder failure and cancellation.
 
 ### Task 1.2 — Live [REDACTED_DEVICE_ALIAS] feasibility gate
@@ -439,7 +439,9 @@ Required amendment:
 - Existing verification/deployment scripts selectively load/export only variables they require and explicitly remove
   `[REDACTED_DEVICE_ALIAS]_PIN` from every child environment.
 - Add fake-child tests that inspect their environment and fail if `[REDACTED_DEVICE_ALIAS]_PIN` is inherited.
-- `scripts/sync-build-deploy.sh` is unconditionally in scope for this remediation, not only for a post-deploy gate.
+- `scripts/sync-build-deploy.sh`, `myconf/[REDACTED_DEVICE_ALIAS]/scripts/verify.sh` and
+  `myconf/[REDACTED_DEVICE_ALIAS]/android/apply-config.sh` are unconditionally in scope for this remediation, not only for a
+  post-deploy gate. None of them may execute the secrets file as shell code or export `[REDACTED_DEVICE_ALIAS]_PIN` to children.
 
 ### RF-003 — CRITICAL: client-side tool approval is not a security boundary
 

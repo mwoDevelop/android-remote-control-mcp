@@ -59,6 +59,9 @@ interface PrivilegedAdminBackend {
 
     /** Removes [packageName] for Android user 0; a system-partition APK is not deleted. */
     suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult
+
+    /** Local-only feasibility seam. It is not registered as an MCP tool and consumes [digits]. */
+    suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean
 }
 
 /** Creates the production backend while keeping implementation types private to this module. */
@@ -67,5 +70,6 @@ object PrivilegedAdminBackendFactory {
         ShizukuPrivilegedAdminBackend(
             stateProbe = AndroidShizukuStateProbe(context.applicationContext),
             commandExecutor = ShizukuProcessCommandExecutor(),
+            digitInputClient = ShizukuUserServiceDigitInputClient(context.applicationContext),
         )
 }
