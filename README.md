@@ -369,10 +369,14 @@ Validate both directories and their shared schema with:
 ```
 
 The guarded local delivery workflow is defined in
-[`scripts/sync-build-deploy.sh`](scripts/sync-build-deploy.sh). Its `sync` command creates a review branch only;
+[`scripts/sync-build-deploy.sh`](scripts/sync-build-deploy.sh). Its `sync` command fetches the official upstream and
+creates a review branch only when the selected upstream ref is not already integrated;
 `all` builds and deploys the already checked-out reviewed commit and never fetches or merges. Mutation commands
 require the literal `--apply` flag, an explicit device, matching device identity, a qualified local build manifest,
 and matching installed/candidate signing certificates.
+
+Pinned native dependencies use the same entrypoint with explicit refs, for example
+`./scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply`; vendor updates must be fast-forwards.
 
 ```bash
 ./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>

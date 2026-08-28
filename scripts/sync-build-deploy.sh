@@ -12,6 +12,8 @@ SERIAL=""
 VARIANT="$DEFAULT_VARIANT"
 ARTIFACT=""
 UPSTREAM_REF="upstream/main"
+CLOUDFLARED_REF=""
+NGROK_REF=""
 SKIP_E2E=false
 COMMAND="${1:-}"
 shift || true
@@ -20,14 +22,17 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/sync-build-deploy.sh check  --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> [--serial <adb-serial>]
-  scripts/sync-build-deploy.sh sync   [--upstream-ref upstream/main] --apply
+  scripts/sync-build-deploy.sh sync   [--upstream-ref upstream/main]
+                                      [--cloudflared-ref <tag-or-origin/ref>]
+                                      [--ngrok-ref <origin/ref>] --apply
   scripts/sync-build-deploy.sh build  [--variant gmsDebug|fossDebug|gmsRelease|fossRelease] [--skip-e2e-compile]
   scripts/sync-build-deploy.sh deploy --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <apk> [--serial <adb-serial>] --apply
   scripts/sync-build-deploy.sh all    --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> [--variant ...] [--serial <adb-serial>] --apply
   scripts/sync-build-deploy.sh rollback --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <known-good-apk> [--serial <adb-serial>] --apply
 
 Safety contract:
-  check is read-only. sync only creates a review branch and merges there; it never deploys.
+  check is read-only. sync fetches upstream and creates a review branch only when new commits exist;
+  it exits without creating a branch when upstream is already integrated, and never deploys.
   all validates, builds and deploys the already checked-out commit; it never fetches or merges.
   sync/deploy/all/rollback print a preview and make no changes without literal --apply.
   Deployment never uninstalls an app, bypasses signature checks, grants Restricted Settings,
@@ -36,6 +41,7 @@ Safety contract:
 Examples:
   scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial SERIAL
   scripts/sync-build-deploy.sh sync --upstream-ref upstream/main --apply
+  scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply
   scripts/sync-build-deploy.sh build --variant gmsDebug
   scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial SERIAL --apply
 EOF
@@ -58,6 +64,8 @@ parse_args() {
       --variant) (($# >= 2)) || die "--variant requires a value"; VARIANT="$2"; shift 2 ;;
       --artifact) (($# >= 2)) || die "--artifact requires a value"; ARTIFACT="$2"; shift 2 ;;
       --upstream-ref) (($# >= 2)) || die "--upstream-ref requires a value"; UPSTREAM_REF="$2"; shift 2 ;;
+      --cloudflared-ref) (($# >= 2)) || die "--cloudflared-ref requires a value"; CLOUDFLARED_REF="$2"; shift 2 ;;
+      --ngrok-ref) (($# >= 2)) || die "--ngrok-ref requires a value"; NGROK_REF="$2"; shift 2 ;;
       --skip-e2e-compile) SKIP_E2E=true; shift ;;
       --apply) APPLY=true; shift ;;
       --help|-h) usage; exit 0 ;;
@@ -71,26 +79,33 @@ validate_contract() {
     check)
       [[ -n "$DEVICE" ]] || die "check requires --device"
       [[ "$APPLY" == false ]] || die "check does not accept --apply"
-      [[ "$VARIANT" == "$DEFAULT_VARIANT" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" && "$SKIP_E2E" == false ]] ||
+      [[ "$VARIANT" == "$DEFAULT_VARIANT" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
+         -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$SKIP_E2E" == false ]] ||
         die "check received an option that belongs to another command"
       ;;
     sync)
       [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" && "$SKIP_E2E" == false ]] ||
-        die "sync accepts only --upstream-ref and --apply"
+        die "sync accepts only upstream refs and --apply"
       [[ "$UPSTREAM_REF" =~ ^upstream/[A-Za-z0-9._/-]+$ ]] || die "--upstream-ref must name a ref below upstream/"
+      [[ -z "$CLOUDFLARED_REF" || "$CLOUDFLARED_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Invalid --cloudflared-ref"
+      [[ -z "$NGROK_REF" || "$NGROK_REF" =~ ^origin/[A-Za-z0-9._/-]+$ ]] ||
+        die "--ngrok-ref must name a ref below the maintained origin/ fork"
       ;;
     build)
-      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" && "$APPLY" == false ]] ||
+      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
+         -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$APPLY" == false ]] ||
         die "build accepts only --variant and --skip-e2e-compile"
       ;;
     deploy|rollback)
       [[ -n "$DEVICE" && -n "$ARTIFACT" ]] || die "$COMMAND requires --device and --artifact"
-      [[ "$VARIANT" == "$DEFAULT_VARIANT" && "$UPSTREAM_REF" == "upstream/main" && "$SKIP_E2E" == false ]] ||
+      [[ "$VARIANT" == "$DEFAULT_VARIANT" && "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" &&
+         -z "$NGROK_REF" && "$SKIP_E2E" == false ]] ||
         die "$COMMAND received an option that belongs to another command"
       ;;
     all)
       [[ -n "$DEVICE" ]] || die "all requires --device"
-      [[ -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" && "$SKIP_E2E" == false ]] ||
+      [[ -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" &&
+         -z "$NGROK_REF" && "$SKIP_E2E" == false ]] ||
         die "all does not accept --artifact, --upstream-ref or --skip-e2e-compile"
       ;;
     help|--help|-h|"") usage; exit 0 ;;
@@ -202,23 +217,94 @@ verify_upstream_remote() {
   [[ "$push_url" == "DISABLED" ]] || die "upstream push URL must be DISABLED"
 }
 
+upstream_is_integrated() {
+  local upstream_sha="$1" base_sha="$2"
+  git -C "$REPO_ROOT" merge-base --is-ancestor "$upstream_sha" "$base_sha"
+}
+
+verify_vendor_remote() {
+  local path="$1" remote="$2" expected_url="$3" fetch_url
+  fetch_url="$(git -C "$REPO_ROOT/$path" remote get-url "$remote" 2>/dev/null)" ||
+    die "Missing $remote remote in $path"
+  [[ "$fetch_url" == "$expected_url" ]] || die "$path $remote URL is not the expected repository"
+}
+
+vendor_ref_is_fast_forward() {
+  local path="$1" current_sha="$2" target_sha="$3"
+  git -C "$REPO_ROOT/$path" merge-base --is-ancestor "$current_sha" "$target_sha"
+}
+
+resolve_vendor_ref() {
+  local path="$1" remote="$2" ref="$3"
+  git -C "$REPO_ROOT/$path" fetch "$remote" --prune --tags
+  git -C "$REPO_ROOT/$path" rev-parse --verify "$ref^{commit}"
+}
+
 sync_upstream() {
   verify_upstream_remote
+  [[ -z "$CLOUDFLARED_REF" ]] ||
+    verify_vendor_remote vendor/cloudflared origin https://github.com/cloudflare/cloudflared.git
+  [[ -z "$NGROK_REF" ]] ||
+    verify_vendor_remote vendor/ngrok-java origin https://github.com/danielealbano/ngrok-java.git
   if [[ "$APPLY" == false ]]; then
-    printf 'PREVIEW: require clean main, fetch upstream --prune, create sync/upstream-TIMESTAMP, merge --no-ff %s.\n' "$UPSTREAM_REF"
+    printf 'PREVIEW: require clean main, fetch and merge %s only when pending' "$UPSTREAM_REF"
+    [[ -z "$CLOUDFLARED_REF" ]] || printf ', update cloudflared to %s' "$CLOUDFLARED_REF"
+    [[ -z "$NGROK_REF" ]] || printf ', update ngrok-java to %s' "$NGROK_REF"
+    printf '; create one sync/upstream-TIMESTAMP review branch only when changes exist.\n'
     return
   fi
   require_clean_worktree
   [[ "$(git -C "$REPO_ROOT" branch --show-current)" == "main" ]] || die "sync must start from local main"
   git -C "$REPO_ROOT" fetch upstream --prune
   local remote_ref="refs/remotes/$UPSTREAM_REF" upstream_sha base_sha branch
+  local cloudflared_current="" cloudflared_target="" ngrok_current="" ngrok_target=""
+  local app_pending=false cloudflared_pending=false ngrok_pending=false
   upstream_sha="$(git -C "$REPO_ROOT" rev-parse --verify "$remote_ref^{commit}")" || die "Cannot resolve $UPSTREAM_REF"
   base_sha="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  upstream_is_integrated "$upstream_sha" "$base_sha" || app_pending=true
+
+  if [[ -n "$CLOUDFLARED_REF" ]]; then
+    cloudflared_current="$(git -C "$REPO_ROOT/vendor/cloudflared" rev-parse HEAD)"
+    cloudflared_target="$(resolve_vendor_ref vendor/cloudflared origin "$CLOUDFLARED_REF")" ||
+      die "Cannot resolve cloudflared ref $CLOUDFLARED_REF"
+    if [[ "$cloudflared_current" != "$cloudflared_target" ]]; then
+      vendor_ref_is_fast_forward vendor/cloudflared "$cloudflared_current" "$cloudflared_target" ||
+        die "cloudflared update is not a fast-forward from the pinned commit"
+      cloudflared_pending=true
+    fi
+  fi
+
+  if [[ -n "$NGROK_REF" ]]; then
+    ngrok_current="$(git -C "$REPO_ROOT/vendor/ngrok-java" rev-parse HEAD)"
+    ngrok_target="$(resolve_vendor_ref vendor/ngrok-java origin "$NGROK_REF")" ||
+      die "Cannot resolve ngrok-java ref $NGROK_REF"
+    if [[ "$ngrok_current" != "$ngrok_target" ]]; then
+      vendor_ref_is_fast_forward vendor/ngrok-java "$ngrok_current" "$ngrok_target" ||
+        die "ngrok-java update is not a fast-forward; merge upstream in the maintained fork first"
+      ngrok_pending=true
+    fi
+  fi
+
+  if [[ "$app_pending" == false && "$cloudflared_pending" == false && "$ngrok_pending" == false ]]; then
+    printf 'Already up to date: requested upstream refs are integrated; no review branch created.\n'
+    return
+  fi
   branch="sync/upstream-$(date +%Y%m%d-%H%M%S)"
   git -C "$REPO_ROOT" switch -c "$branch"
-  if ! git -C "$REPO_ROOT" merge --no-ff "$upstream_sha"; then
+  if [[ "$app_pending" == true ]] && ! git -C "$REPO_ROOT" merge --no-ff "$upstream_sha"; then
     printf 'Merge conflict preserved on %s. Resolve manually, commit, test, then open a PR. No abort/reset was run.\n' "$branch" >&2
     exit 1
+  fi
+  if [[ "$cloudflared_pending" == true ]]; then
+    git -C "$REPO_ROOT/vendor/cloudflared" switch --detach "$cloudflared_target"
+    git -C "$REPO_ROOT" add vendor/cloudflared
+  fi
+  if [[ "$ngrok_pending" == true ]]; then
+    git -C "$REPO_ROOT/vendor/ngrok-java" switch --detach "$ngrok_target"
+    git -C "$REPO_ROOT" add vendor/ngrok-java
+  fi
+  if ! git -C "$REPO_ROOT" diff --cached --quiet; then
+    git -C "$REPO_ROOT" commit -m "chore: update vendored upstreams"
   fi
   printf 'Sync branch ready for review: %s\nbase=%s\nupstream=%s\nmerge=%s\n' \
     "$branch" "$base_sha" "$upstream_sha" "$(git -C "$REPO_ROOT" rev-parse HEAD)"

@@ -56,6 +56,7 @@ test_help() {
   output="$(cd "$repo" && scripts/sync-build-deploy.sh --help)"
   [[ "$output" == *"all validates, builds and deploys the already checked-out commit"* ]]
   [[ "$output" == *"never uninstalls"* ]]
+  [[ "$output" == *"--cloudflared-ref"* ]]
   pass "help documents mutation and uninstall boundaries"
 }
 
@@ -76,6 +77,18 @@ test_sync_preview() {
   pass "sync without apply is a non-mutating preview"
 }
 
+test_vendor_sync_preview() {
+  local repo output
+  repo="$(new_repo)"
+  mkdir -p "$repo/vendor/cloudflared"
+  git -C "$repo/vendor/cloudflared" init -q
+  git -C "$repo/vendor/cloudflared" remote add origin https://github.com/cloudflare/cloudflared.git
+  output="$(cd "$repo" && scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2)"
+  [[ "$output" == *"update cloudflared to 2026.8.2"* ]]
+  [[ "$(git -C "$repo" branch --show-current)" == "main" ]]
+  pass "vendor sync preview is non-mutating and uses the same script"
+}
+
 test_dirty_sync() {
   local repo
   repo="$(new_repo)"
@@ -91,6 +104,56 @@ test_wrong_upstream() {
   git -C "$repo" remote set-url upstream https://example.invalid/not-official.git
   expect_failure "wrong upstream URL is rejected" "not the official repository" \
     bash -c "cd '$repo' && scripts/sync-build-deploy.sh sync"
+}
+
+test_upstream_integrated_detection() {
+  local repo root_sha main_sha upstream_sha
+  repo="$(new_repo)"
+  eval "$(sed -n '/^upstream_is_integrated() {/,/^}/p' "$SOURCE_SCRIPT")"
+  REPO_ROOT="$repo"
+  root_sha="$(git -C "$repo" rev-parse HEAD)"
+
+  printf 'main\n' >"$repo/main-only.txt"
+  git -C "$repo" add main-only.txt
+  git -C "$repo" commit -q -m main-ahead
+  main_sha="$(git -C "$repo" rev-parse HEAD)"
+  upstream_is_integrated "$root_sha" "$main_sha"
+
+  git -C "$repo" switch -q -c upstream-test "$root_sha"
+  printf 'upstream\n' >"$repo/upstream-only.txt"
+  git -C "$repo" add upstream-only.txt
+  git -C "$repo" commit -q -m upstream-ahead
+  upstream_sha="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" switch -q main
+  if upstream_is_integrated "$upstream_sha" "$main_sha"; then
+    printf 'not ok - divergent upstream was reported as integrated\n' >&2
+    exit 1
+  fi
+  pass "sync detects integrated and pending upstream histories"
+}
+
+test_vendor_fast_forward_detection() {
+  local repo first_sha second_sha side_sha
+  repo="$(new_repo)"
+  REPO_ROOT="$repo"
+  eval "$(sed -n '/^vendor_ref_is_fast_forward() {/,/^}/p' "$SOURCE_SCRIPT")"
+  first_sha="$(git -C "$repo" rev-parse HEAD)"
+  printf 'next\n' >"$repo/next.txt"
+  git -C "$repo" add next.txt
+  git -C "$repo" commit -q -m next
+  second_sha="$(git -C "$repo" rev-parse HEAD)"
+  vendor_ref_is_fast_forward . "$first_sha" "$second_sha"
+
+  git -C "$repo" switch -q -c side "$first_sha"
+  printf 'side\n' >"$repo/side.txt"
+  git -C "$repo" add side.txt
+  git -C "$repo" commit -q -m side
+  side_sha="$(git -C "$repo" rev-parse HEAD)"
+  if vendor_ref_is_fast_forward . "$second_sha" "$side_sha"; then
+    printf 'not ok - divergent vendor update was accepted\n' >&2
+    exit 1
+  fi
+  pass "vendor updates accept only fast-forward refs"
 }
 
 test_deploy_preview() {
@@ -191,8 +254,11 @@ test_tunnel_payload_gate() {
 test_help
 test_unknown_flag
 test_sync_preview
+test_vendor_sync_preview
 test_dirty_sync
 test_wrong_upstream
+test_upstream_integrated_detection
+test_vendor_fast_forward_detection
 test_deploy_preview
 test_all_preview_has_no_sync
 test_ambiguous_adb
