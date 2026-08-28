@@ -584,19 +584,26 @@ preflight_artifact_and_device() {
 }
 
 verify_loopback_binding() {
-  local listeners wifi_ip
-  listeners="$(adb_target shell ss -ltn 2>/dev/null | tr -d '\r' || true)"
-  [[ "$listeners" != *"0.0.0.0:8080"* && "$listeners" != *"[::]:8080"* ]] ||
-    die "MCP port 8080 is exposed beyond loopback"
-  [[ "$listeners" == *"127.0.0.1:8080"* || "$listeners" == *"[::ffff:127.0.0.1]:8080"* ]] ||
-    die "MCP server is not listening on loopback port 8080"
+  local forward_port loopback_status wifi_ip
+  require_command curl
+  forward_port="$(adb_target forward tcp:0 tcp:8080 | tr -d '\r')"
+  [[ "$forward_port" =~ ^[0-9]+$ ]] || die "ADB did not allocate a host port for the MCP loopback check"
+  loopback_status="$(
+    curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+      --max-time 8 "http://127.0.0.1:${forward_port}/mcp" || true
+  )"
+  adb_target forward --remove "tcp:${forward_port}" >/dev/null
+  case "$loopback_status" in
+    200|400|401|403|405) ;;
+    *) die "MCP server is not reachable over the device loopback port 8080" ;;
+  esac
 
   wifi_ip="$(adb_target shell ip -o -4 addr show dev wlan0 scope global 2>/dev/null | tr -d '\r' | awk '{print $4}' | cut -d/ -f1 | head -1)"
   [[ -n "$wifi_ip" ]] || die "Cannot verify Wi-Fi non-exposure because wlan0 has no IPv4 address"
   if timeout 3 bash -c 'exec 3<>"/dev/tcp/$1/8080"' _ "$wifi_ip" 2>/dev/null; then
     die "MCP port 8080 accepts TCP connections through the device Wi-Fi address"
   fi
-  printf 'OK: MCP listens only on loopback and Wi-Fi TCP port 8080 is closed.\n'
+  printf 'OK: MCP responds through ADB loopback forwarding and Wi-Fi TCP port 8080 is closed.\n'
 }
 
 write_deployment_manifest() {

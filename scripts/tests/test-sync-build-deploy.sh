@@ -267,36 +267,39 @@ test_production_listener_safety() {
   die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
   adb_target() {
     case "$*" in
-      "shell ss -ltn") printf '%s\n' "$TEST_LISTENERS" ;;
+      "forward tcp:0 tcp:8080") printf '36123\n' ;;
+      "forward --remove tcp:36123") return 0 ;;
       "shell ip -o -4 addr show dev wlan0 scope global")
         printf '12: wlan0 inet %s/24 brd 192.0.2.255 scope global wlan0\n' "$TEST_WIFI_IP"
         ;;
       *) return 99 ;;
     esac
   }
+  require_command() { :; }
+  curl() { printf '%s' "$TEST_LOOPBACK_HTTP"; }
   timeout() { [[ "$TEST_WIFI_OPEN" == true ]]; }
 
-  TEST_LISTENERS='LISTEN 0 128 [::ffff:127.0.0.1]:8080 *:*'
+  TEST_LOOPBACK_HTTP=401
   TEST_WIFI_IP='192.0.2.10'
   TEST_WIFI_OPEN=false
   output="$(verify_loopback_binding)"
   [[ "$output" == *'Wi-Fi TCP port 8080 is closed'* ]]
 
-  TEST_LISTENERS='LISTEN 0 128 [::]:8080 *:*'
+  TEST_LOOPBACK_HTTP=000
   set +e
   output="$( (verify_loopback_binding) 2>&1 )"
   status=$?
   set -e
-  [[ $status -ne 0 && "$output" == *'exposed beyond loopback'* ]]
+  [[ $status -ne 0 && "$output" == *'not reachable over the device loopback'* ]]
 
-  TEST_LISTENERS='LISTEN 0 128 127.0.0.1:8080 *:*'
+  TEST_LOOPBACK_HTTP=401
   TEST_WIFI_OPEN=true
   set +e
   output="$( (verify_loopback_binding) 2>&1 )"
   status=$?
   set -e
   [[ $status -ne 0 && "$output" == *'accepts TCP connections through the device Wi-Fi address'* ]]
-  pass "production listener accepts IPv6-mapped loopback and rejects wildcard or Wi-Fi exposure"
+  pass "production listener passes ADB loopback HTTP and rejects Wi-Fi exposure"
 }
 
 test_tunnel_payload_gate() {
