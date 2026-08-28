@@ -383,6 +383,8 @@ strict `vMAJOR.MINOR.PATCH` tag, while `--latest-edge` resolves the official mov
 a private local ref, builds the exact upstream commit in an isolated temporary worktree, leaves `main` unchanged and
 never deploys. The APK and a provenance manifest are copied to `build/channels/stable/` or `build/channels/edge/`.
 These are pure official-upstream builds, so they intentionally exclude this fork's custom commits and `myconf/`.
+Every build also compiles the pinned host `cloudflared` into ignored `build/host-tools/` and adds it to the test
+process `PATH`; the Cloudflare integration gate therefore does not depend on a separately installed host binary.
 
 ```bash
 ./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
