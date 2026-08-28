@@ -57,7 +57,31 @@ test_help() {
   [[ "$output" == *"all validates, builds and deploys the already checked-out commit"* ]]
   [[ "$output" == *"never uninstalls"* ]]
   [[ "$output" == *"--cloudflared-ref"* ]]
+  [[ "$output" == *"--latest-stable"* ]]
+  [[ "$output" == *"--latest-edge"* ]]
   pass "help documents mutation and uninstall boundaries"
+}
+
+test_channel_arguments() {
+  local repo
+  repo="$(new_repo)"
+  expect_failure "latest channel flags are mutually exclusive" "mutually exclusive" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --latest-stable --latest-edge"
+  expect_failure "latest channel flags belong only to build" "sync accepts only" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh sync --latest-edge"
+}
+
+test_latest_stable_selection() {
+  local selected
+  eval "$(sed -n '/^latest_stable_tag_from_remote_listing() {/,/^}/p' "$SOURCE_SCRIPT")"
+  selected="$(printf '%s\n' \
+    '111 refs/tags/v1.9.0' \
+    '222 refs/tags/v1.10.0' \
+    '333 refs/tags/v2.0.0' \
+    '444 refs/tags/v3.0.0-rc1' \
+    '555 refs/tags/v2.0.0^{}' | latest_stable_tag_from_remote_listing)"
+  [[ "$selected" == "v2.0.0" ]]
+  pass "latest stable accepts only strict release tags and uses version order"
 }
 
 test_unknown_flag() {
@@ -252,6 +276,8 @@ test_tunnel_payload_gate() {
 }
 
 test_help
+test_channel_arguments
+test_latest_stable_selection
 test_unknown_flag
 test_sync_preview
 test_vendor_sync_preview
