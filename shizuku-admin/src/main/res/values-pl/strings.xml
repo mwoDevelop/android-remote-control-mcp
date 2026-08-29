@@ -2,25 +2,33 @@
 <resources>
     <string name="remote_unlock_admin_launcher">Administrator ARCP</string>
     <string name="remote_unlock_admin_title">Administrator zdalnego odblokowania</string>
-    <string name="remote_unlock_admin_description">Uzbrój jedną lokalną, ograniczoną czasowo próbę odblokowania. PIN nie jest wyświetlany ani wysyłany poza telefon.</string>
+    <string name="remote_unlock_admin_description">Wybierz jednorazowe uzbrojenie albo lokalnie zezwól na wielokrotne zaufane odblokowanie. PIN nie jest wyświetlany ani wysyłany poza telefon.</string>
     <string name="remote_unlock_admin_loading">Wczytywanie stanu…</string>
     <string name="remote_unlock_admin_not_configured">Zdalne odblokowanie nie jest skonfigurowane.</string>
     <string name="remote_unlock_admin_disabled">Zdalne odblokowanie jest skonfigurowane, ale wyłączone.</string>
     <string name="remote_unlock_admin_rearm_required">Poprzednia próba nie powiodła się. Wymagane jest lokalne uzbrojenie.</string>
     <string name="remote_unlock_admin_armed">Uzbrojono jedną próbę; pozostało %1$d s.</string>
+    <string name="remote_unlock_admin_trusted">Zaufane odblokowanie jest aktywne do lokalnego wyłączenia. Próby są limitowane i nadal wymagają Shizuku.</string>
+    <string name="remote_unlock_admin_trusted_rate_limited">Zaufane odblokowanie jest aktywne, ale czasowo zablokowane jeszcze przez %1$d s.</string>
     <string name="remote_unlock_admin_ready">Gotowe do lokalnego uzbrojenia.</string>
     <string name="remote_unlock_admin_shizuku_ready">Shizuku: gotowe</string>
     <string name="remote_unlock_admin_shizuku_unavailable">Shizuku: niedostępne; uruchom je przed zdalnym odblokowaniem.</string>
     <string name="remote_unlock_admin_status_error">Lokalny stan zdalnego odblokowania jest niedostępny.</string>
     <string name="remote_unlock_admin_arm">Uzbrój jedną próbę na 15 minut</string>
     <string name="remote_unlock_admin_disarm">Rozbrój teraz</string>
+    <string name="remote_unlock_admin_enable_trusted">Włącz zaufane wielokrotne odblokowanie</string>
+    <string name="remote_unlock_admin_disable_trusted">Wyłącz zaufane odblokowanie</string>
     <string name="remote_unlock_admin_refresh">Odśwież stan</string>
     <string name="remote_unlock_admin_auth_title">Zezwól na zdalne odblokowanie</string>
     <string name="remote_unlock_admin_auth_subtitle">Potwierdź blokadą urządzenia lub silną biometrią.</string>
     <string name="remote_unlock_admin_message_armed">Uzbrojono jedną próbę zdalnego odblokowania.</string>
+    <string name="remote_unlock_admin_message_trusted_enabled">Włączono zaufane wielokrotne odblokowanie.</string>
+    <string name="remote_unlock_admin_message_trusted_disabled">Wyłączono zaufane odblokowanie.</string>
     <string name="remote_unlock_admin_message_disarmed">Zdalne odblokowanie zostało rozbrojone.</string>
     <string name="remote_unlock_admin_message_auth_cancelled">Anulowano uwierzytelnienie. Niczego nie uzbrojono.</string>
     <string name="remote_unlock_admin_message_auth_error">Lokalne uwierzytelnienie jest niedostępne lub nie powiodło się.</string>
     <string name="remote_unlock_admin_message_arm_failed">Uwierzytelnienie powiodło się, ale uzbrojenie nie.</string>
+    <string name="remote_unlock_admin_message_trusted_enable_failed">Uwierzytelnienie powiodło się, ale nie udało się włączyć zaufanego odblokowania.</string>
+    <string name="remote_unlock_admin_message_trusted_disable_failed">Nie udało się wyłączyć zaufanego odblokowania.</string>
     <string name="remote_unlock_admin_message_disarm_failed">Rozbrojenie nie powiodło się.</string>
 </resources>

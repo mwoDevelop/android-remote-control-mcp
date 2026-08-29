@@ -177,7 +177,7 @@ class UninstallApplicationAdminHandler
         }
     }
 
-/** Zero-argument, one-shot remote unlock. Credential material never crosses the MCP boundary. */
+/** Zero-argument policy-controlled remote unlock. Credential material never crosses the MCP boundary. */
 class UnlockDeviceAdminHandler(
     private val controller: RemoteUnlockOperation,
     private val credentialStore: RemoteUnlockCredentialStore,
@@ -199,7 +199,7 @@ class UnlockDeviceAdminHandler(
             name = "$toolNamePrefix$TOOL_NAME",
             description =
                 "Unlocks this device using a locally provisioned credential. Takes no PIN or other input; " +
-                    "the credential never leaves the device. Requires an explicit one-shot local administrator arm.",
+                    "the credential never leaves the device. Requires a locally authorized one-shot or trusted policy.",
             inputSchema = ToolSchema(properties = buildJsonObject {}, required = emptyList()),
         ) { _ -> execute() }
     }

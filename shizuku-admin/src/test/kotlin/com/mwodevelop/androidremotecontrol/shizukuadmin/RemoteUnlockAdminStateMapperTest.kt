@@ -35,6 +35,50 @@ class RemoteUnlockAdminStateMapperTest {
     }
 
     @Test
+    fun `trusted state permits only trusted disable`() {
+        val view =
+            RemoteUnlockAdminStateMapper.map(
+                RemoteUnlockAdminStatus(
+                    configured = true,
+                    enabled = true,
+                    armed = false,
+                    rearmRequired = false,
+                    remainingMs = 0,
+                    mode = RemoteUnlockAdminMode.TRUSTED,
+                    trustedActive = true,
+                ),
+                shizukuReady = true,
+            )
+
+        assertEquals(RemoteUnlockAdminState.TRUSTED, view.state)
+        assertFalse(view.canArm)
+        assertFalse(view.canEnableTrusted)
+        assertTrue(view.canDisableTrusted)
+    }
+
+    @Test
+    fun `trusted cooldown is rounded up and does not disable trusted policy`() {
+        val view =
+            RemoteUnlockAdminStateMapper.map(
+                RemoteUnlockAdminStatus(
+                    configured = true,
+                    enabled = true,
+                    armed = false,
+                    rearmRequired = false,
+                    remainingMs = 0,
+                    mode = RemoteUnlockAdminMode.TRUSTED,
+                    trustedActive = true,
+                    cooldownRemainingMs = 1_001,
+                ),
+                shizukuReady = true,
+            )
+
+        assertEquals(RemoteUnlockAdminState.TRUSTED_RATE_LIMITED, view.state)
+        assertEquals(2, view.cooldownSeconds)
+        assertTrue(view.canDisableTrusted)
+    }
+
+    @Test
     fun `configuration failures take precedence over arm controls`() {
         val notConfigured =
             RemoteUnlockAdminStateMapper.map(RemoteUnlockAdminStatus(false, false, false, false, 0), false)

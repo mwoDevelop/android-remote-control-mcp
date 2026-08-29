@@ -16,6 +16,8 @@ internal class RemoteUnlockAdminView(
     private val messageText: TextView
     private val armButton: Button
     private val disarmButton: Button
+    private val enableTrustedButton: Button
+    private val disableTrustedButton: Button
     private val refreshButton: Button
 
     init {
@@ -34,12 +36,16 @@ internal class RemoteUnlockAdminView(
         messageText = textView(null, MESSAGE_SP, MESSAGE_MARGIN_DP)
         armButton = button(R.string.remote_unlock_admin_arm)
         disarmButton = button(R.string.remote_unlock_admin_disarm)
+        enableTrustedButton = button(R.string.remote_unlock_admin_enable_trusted)
+        disableTrustedButton = button(R.string.remote_unlock_admin_disable_trusted)
         refreshButton = button(R.string.remote_unlock_admin_refresh)
         content.addView(statusText)
         content.addView(shizukuText)
         content.addView(messageText)
         content.addView(armButton, buttonLayoutParams(PRIMARY_BUTTON_MARGIN_DP))
         content.addView(disarmButton, buttonLayoutParams(BUTTON_MARGIN_DP))
+        content.addView(enableTrustedButton, buttonLayoutParams(BUTTON_MARGIN_DP))
+        content.addView(disableTrustedButton, buttonLayoutParams(BUTTON_MARGIN_DP))
         content.addView(refreshButton, buttonLayoutParams(BUTTON_MARGIN_DP))
         addView(content)
     }
@@ -47,10 +53,14 @@ internal class RemoteUnlockAdminView(
     fun setActionListeners(
         onArm: () -> Unit,
         onDisarm: () -> Unit,
+        onEnableTrusted: () -> Unit,
+        onDisableTrusted: () -> Unit,
         onRefresh: () -> Unit,
     ) {
         armButton.setOnClickListener { onArm() }
         disarmButton.setOnClickListener { onDisarm() }
+        enableTrustedButton.setOnClickListener { onEnableTrusted() }
+        disableTrustedButton.setOnClickListener { onDisableTrusted() }
         refreshButton.setOnClickListener { onRefresh() }
     }
 
@@ -76,6 +86,14 @@ internal class RemoteUnlockAdminView(
                     context.getString(R.string.remote_unlock_admin_armed, state.remainingSeconds)
                 }
 
+                RemoteUnlockAdminState.TRUSTED -> {
+                    context.getString(R.string.remote_unlock_admin_trusted)
+                }
+
+                RemoteUnlockAdminState.TRUSTED_RATE_LIMITED -> {
+                    context.getString(R.string.remote_unlock_admin_trusted_rate_limited, state.cooldownSeconds)
+                }
+
                 RemoteUnlockAdminState.READY -> {
                     context.getString(R.string.remote_unlock_admin_ready)
                 }
@@ -89,6 +107,8 @@ internal class RemoteUnlockAdminView(
         )
         armButton.isEnabled = state.canArm && !busy
         disarmButton.isEnabled = state.canDisarm && !busy
+        enableTrustedButton.isEnabled = state.canEnableTrusted && !busy
+        disableTrustedButton.isEnabled = state.canDisableTrusted && !busy
         refreshButton.isEnabled = !busy
     }
 
@@ -97,6 +117,8 @@ internal class RemoteUnlockAdminView(
         shizukuText.text = ""
         armButton.isEnabled = false
         disarmButton.isEnabled = false
+        enableTrustedButton.isEnabled = false
+        disableTrustedButton.isEnabled = false
     }
 
     fun showMessage(message: RemoteUnlockAdminMessage) {
@@ -104,6 +126,10 @@ internal class RemoteUnlockAdminView(
             when (message) {
                 RemoteUnlockAdminMessage.ARMED -> {
                     R.string.remote_unlock_admin_message_armed
+                }
+
+                RemoteUnlockAdminMessage.TRUSTED_ENABLED -> {
+                    R.string.remote_unlock_admin_message_trusted_enabled
                 }
 
                 RemoteUnlockAdminMessage.AUTHENTICATION_CANCELLED -> {
@@ -117,6 +143,20 @@ internal class RemoteUnlockAdminView(
                 RemoteUnlockAdminMessage.ARM_FAILED -> {
                     R.string.remote_unlock_admin_message_arm_failed
                 }
+
+                RemoteUnlockAdminMessage.TRUSTED_ENABLE_FAILED -> {
+                    R.string.remote_unlock_admin_message_trusted_enable_failed
+                }
+            },
+        )
+    }
+
+    fun showDisableTrustedResult(success: Boolean) {
+        messageText.setText(
+            if (success) {
+                R.string.remote_unlock_admin_message_trusted_disabled
+            } else {
+                R.string.remote_unlock_admin_message_trusted_disable_failed
             },
         )
     }

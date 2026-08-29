@@ -14,9 +14,11 @@ internal interface LocalAdministratorAuthenticator {
 
 enum class RemoteUnlockAdminMessage {
     ARMED,
+    TRUSTED_ENABLED,
     AUTHENTICATION_CANCELLED,
     AUTHENTICATION_ERROR,
     ARM_FAILED,
+    TRUSTED_ENABLE_FAILED,
 }
 
 internal interface RemoteUnlockArmCoordinatorListener {
@@ -34,7 +36,7 @@ internal class RemoteUnlockArmCoordinator(
     private val listener: RemoteUnlockArmCoordinatorListener,
 ) {
     private var resumed = false
-    private var activeAttempt: Long? = null
+    private var activeAttempt: ActiveAttempt? = null
     private var nextAttempt = 0L
 
     fun onResume() {
@@ -52,25 +54,44 @@ internal class RemoteUnlockArmCoordinator(
     }
 
     fun requestArm() {
+        request(AuthenticatedAction.ARM_ONE_SHOT)
+    }
+
+    fun requestEnableTrusted() {
+        request(AuthenticatedAction.ENABLE_TRUSTED)
+    }
+
+    private fun request(action: AuthenticatedAction) {
         if (!resumed || activeAttempt != null) return
         val attempt = ++nextAttempt
-        activeAttempt = attempt
+        activeAttempt = ActiveAttempt(attempt, action)
         listener.onBusyChanged(true)
-        authenticator.authenticate { result -> handleResult(attempt, result) }
+        authenticator.authenticate { result -> handleResult(attempt, action, result) }
     }
 
     private fun handleResult(
         attempt: Long,
+        action: AuthenticatedAction,
         result: LocalAuthenticationResult,
     ) {
-        if (!resumed || activeAttempt != attempt) return
+        if (!resumed || activeAttempt != ActiveAttempt(attempt, action)) return
         activeAttempt = null
         listener.onBusyChanged(false)
         when (result) {
             LocalAuthenticationResult.SUCCESS -> {
-                runCatching { gateway.arm() }
-                    .onSuccess { listener.onMessage(RemoteUnlockAdminMessage.ARMED) }
-                    .onFailure { listener.onMessage(RemoteUnlockAdminMessage.ARM_FAILED) }
+                when (action) {
+                    AuthenticatedAction.ARM_ONE_SHOT -> {
+                        runCatching { gateway.arm() }
+                            .onSuccess { listener.onMessage(RemoteUnlockAdminMessage.ARMED) }
+                            .onFailure { listener.onMessage(RemoteUnlockAdminMessage.ARM_FAILED) }
+                    }
+
+                    AuthenticatedAction.ENABLE_TRUSTED -> {
+                        runCatching { gateway.enableTrusted() }
+                            .onSuccess { listener.onMessage(RemoteUnlockAdminMessage.TRUSTED_ENABLED) }
+                            .onFailure { listener.onMessage(RemoteUnlockAdminMessage.TRUSTED_ENABLE_FAILED) }
+                    }
+                }
                 listener.onRefreshRequested()
             }
 
@@ -83,4 +104,14 @@ internal class RemoteUnlockArmCoordinator(
             }
         }
     }
+
+    private enum class AuthenticatedAction {
+        ARM_ONE_SHOT,
+        ENABLE_TRUSTED,
+    }
+
+    private data class ActiveAttempt(
+        val id: Long,
+        val action: AuthenticatedAction,
+    )
 }

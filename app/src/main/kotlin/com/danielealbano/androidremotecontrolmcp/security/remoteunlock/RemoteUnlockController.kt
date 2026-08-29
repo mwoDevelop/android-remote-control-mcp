@@ -43,14 +43,11 @@ class RemoteUnlockController
                 val status = store.status()
                 if (!status.configured) return@withLock RemoteUnlockOutcome.NOT_CONFIGURED
                 if (!status.enabled) return@withLock RemoteUnlockOutcome.DISABLED
-                if (!status.armed) {
-                    return@withLock RemoteUnlockOutcome.TEMPORARILY_BLOCKED
-                }
                 if (backend.readiness() != PrivilegedAdminReadiness.Ready) {
                     return@withLock RemoteUnlockOutcome.UNAVAILABLE
                 }
                 if (!keyguardManager.isDeviceLocked) return@withLock RemoteUnlockOutcome.ALREADY_UNLOCKED
-                if (!store.consumeArm()) return@withLock RemoteUnlockOutcome.TEMPORARILY_BLOCKED
+                if (!store.beginAttempt()) return@withLock RemoteUnlockOutcome.TEMPORARILY_BLOCKED
 
                 val injected =
                     runCatching {
@@ -60,9 +57,10 @@ class RemoteUnlockController
                     }.getOrDefault(false)
                 delay(KEYGUARD_SETTLE_MS)
                 if (injected && !keyguardManager.isDeviceLocked) {
+                    store.recordAttemptResult(success = true)
                     RemoteUnlockOutcome.UNLOCKED
                 } else {
-                    store.recordFailure()
+                    store.recordAttemptResult(success = false)
                     RemoteUnlockOutcome.UNLOCK_FAILED_REARM_REQUIRED
                 }
             }

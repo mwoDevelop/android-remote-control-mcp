@@ -180,17 +180,21 @@ Protocol-level errors (parse errors, invalid requests) are handled automatically
 
 Unlocks the device with a credential encrypted for its Android Keystore key. The input schema is empty: clients cannot
 provide, retrieve, or replace the PIN through MCP. The administrator bearer is accepted; OAuth is accepted only for the
-exact locally configured server-issued client ID. A local DUMP-gated administrator action must arm one attempt for at
-most 15 minutes.
+exact locally configured server-issued client ID. A locally authenticated administrator chooses either one attempt for
+at most 15 minutes (`ONE_SHOT`) or persistent repeated authorization (`TRUSTED`).
 
 Fork builds also provide a local `ARCP Administrator` launcher activity. It requires Android strong-biometric or
-device-credential authentication before arming and can disarm without authentication. Its arm deadline is bound to
-Android `BOOT_COUNT` and `elapsedRealtime`, so a reboot, expiry, or unavailable clock fails closed. The activity never
-receives the PIN and does not make arming remotely callable; ADB remains the setup/recovery path.
+device-credential authentication before arming or enabling trusted mode and can reduce authorization without
+authentication. A one-shot deadline and trusted rate-limit state are bound to Android `BOOT_COUNT` and
+`elapsedRealtime`; an unavailable clock fails closed. Trusted mode enforces 30 seconds between attempts and blocks
+after three failures in ten minutes. It remains selected until locally disabled or the credential/policy is replaced,
+but the first ordinary unlock and Shizuku activation after a reboot remain manual. The activity never receives the PIN,
+and shell/ADB callers cannot enable trusted mode; ADB remains only the setup/recovery path.
 
 Stable result statuses are `unlocked`, `already_unlocked`, `disabled`, `not_configured`, `temporarily_blocked`,
-`unavailable`, and `unlock_failed_rearm_required`. A failed attempt latches the operation until a local rearm. Other
-Shizuku administrator tools remain bearer-only.
+`unavailable`, and `unlock_failed_rearm_required`. In one-shot mode a failed attempt latches the operation until a
+local rearm; in trusted mode the same legacy bounded failure result is followed by the trusted cooldown/rate limiter,
+without consuming trusted authorization. Other Shizuku administrator tools remain bearer-only.
 
 ```json
 {
