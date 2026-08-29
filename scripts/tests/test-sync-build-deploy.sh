@@ -105,6 +105,64 @@ test_host_cloudflared_preparation() {
   pass "build prepares pinned host cloudflared and adds it to PATH"
 }
 
+test_go_toolchain_bootstrap() {
+  local repo
+  repo="$(new_repo)"
+  (
+    eval "$(sed -n '/^prepare_go_toolchain() {/,/^}/p' "$SOURCE_SCRIPT")"
+    require_command() { :; }
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    docker() {
+      case "$1" in
+        create) printf 'temporary-container\n' ;;
+        cp)
+          mkdir -p "$3/bin"
+          printf '#!/usr/bin/env sh\nprintf "go version go1.26.7 linux/amd64\\n"\n' >"$3/bin/go"
+          chmod +x "$3/bin/go"
+          ;;
+        rm) : ;;
+        *) return 1 ;;
+      esac
+    }
+    REPO_ROOT="$repo"
+    BOOTSTRAP_GO_VERSION="1.26.7"
+    BOOTSTRAP_GO_IMAGE="pinned-test-image"
+    prepare_go_toolchain
+    [[ "$(go version)" == "go version go1.26.7 linux/amd64" ]]
+    [[ ":$PATH:" == *":$repo/build/host-tools/go-1.26.7/bin:"* ]]
+  )
+  pass "build bootstraps a pinned local Go toolchain when the host has none"
+}
+
+test_maven_toolchain_bootstrap() {
+  local repo
+  repo="$(new_repo)"
+  (
+    eval "$(sed -n '/^prepare_maven_toolchain() {/,/^}/p' "$SOURCE_SCRIPT")"
+    require_command() { :; }
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    docker() {
+      case "$1" in
+        create) printf 'temporary-container\n' ;;
+        cp)
+          mkdir -p "$3/bin"
+          printf '#!/usr/bin/env sh\nprintf "Apache Maven 3.9.11 (test)\\n"\n' >"$3/bin/mvn"
+          chmod +x "$3/bin/mvn"
+          ;;
+        rm) : ;;
+        *) return 1 ;;
+      esac
+    }
+    REPO_ROOT="$repo"
+    BOOTSTRAP_MAVEN_VERSION="3.9.11"
+    BOOTSTRAP_MAVEN_IMAGE="pinned-test-image"
+    prepare_maven_toolchain
+    [[ "$(mvn --version | head -1)" == "Apache Maven 3.9.11 (test)" ]]
+    [[ ":$PATH:" == *":$repo/build/host-tools/maven-3.9.11/bin:"* ]]
+  )
+  pass "build bootstraps a pinned local Maven toolchain when the host has none"
+}
+
 test_unknown_flag() {
   local repo
   repo="$(new_repo)"
@@ -346,6 +404,8 @@ test_tunnel_payload_gate() {
 test_help
 test_channel_arguments
 test_latest_stable_selection
+test_go_toolchain_bootstrap
+test_maven_toolchain_bootstrap
 test_host_cloudflared_preparation
 test_unknown_flag
 test_sync_preview
