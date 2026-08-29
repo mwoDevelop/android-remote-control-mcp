@@ -4,7 +4,9 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
+import android.os.Binder
 import android.os.Bundle
+import android.os.Process
 import com.mwodevelop.androidremotecontrol.shizukuadmin.RemoteUnlockAdminContract
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -15,6 +17,7 @@ import dagger.hilt.components.SingletonComponent
 class RemoteUnlockProvisioningProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     override fun call(
         method: String,
         arg: String?,
@@ -62,6 +65,20 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
                 statusBundle(store.status())
             }
 
+            RemoteUnlockAdminContract.METHOD_ENABLE_TRUSTED -> {
+                TrustedRemoteUnlockCallerPolicy.requireApplicationCaller(
+                    callingUid = Binder.getCallingUid(),
+                    applicationUid = Process.myUid(),
+                )
+                store.enableTrusted()
+                statusBundle(store.status())
+            }
+
+            RemoteUnlockAdminContract.METHOD_DISABLE_TRUSTED -> {
+                store.disableTrusted()
+                statusBundle(store.status())
+            }
+
             METHOD_CLEAR -> {
                 store.clear()
                 statusBundle(store.status())
@@ -84,6 +101,9 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
             putBoolean(RemoteUnlockAdminContract.KEY_ARMED, status.armed)
             putBoolean(RemoteUnlockAdminContract.KEY_REARM_REQUIRED, status.rearmRequired)
             putLong(RemoteUnlockAdminContract.KEY_REMAINING_MS, status.remainingArmMs)
+            putString(RemoteUnlockAdminContract.KEY_MODE, status.mode.wireValue)
+            putBoolean(RemoteUnlockAdminContract.KEY_TRUSTED_ACTIVE, status.trustedActive)
+            putLong(RemoteUnlockAdminContract.KEY_COOLDOWN_REMAINING_MS, status.cooldownRemainingMs)
             putString("authorized_client_id", status.authorizedClientId)
         }
 
@@ -126,5 +146,16 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
         const val METHOD_PROVISION = "provision"
         const val METHOD_SET_POLICY = "set_policy"
         const val METHOD_CLEAR = "clear"
+    }
+}
+
+internal object TrustedRemoteUnlockCallerPolicy {
+    fun requireApplicationCaller(
+        callingUid: Int,
+        applicationUid: Int,
+    ) {
+        if (callingUid != applicationUid) {
+            throw SecurityException("Trusted remote unlock requires the local administrator UI")
+        }
     }
 }

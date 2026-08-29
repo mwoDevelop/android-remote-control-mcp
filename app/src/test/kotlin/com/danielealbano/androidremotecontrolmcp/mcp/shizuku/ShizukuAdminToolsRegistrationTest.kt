@@ -93,11 +93,15 @@ class ShizukuAdminToolsRegistrationTest {
 
         override fun arm() = Unit
 
-        override fun consumeArm() = false
+        override fun enableTrusted() = Unit
+
+        override fun disableTrusted() = Unit
+
+        override fun beginAttempt() = false
 
         override fun disarm() = Unit
 
-        override fun recordFailure() = Unit
+        override fun recordAttemptResult(success: Boolean) = Unit
 
         override fun clear() = Unit
 

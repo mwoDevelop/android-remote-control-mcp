@@ -29,7 +29,13 @@ class RemoteUnlockAdminActivity :
                 listener = this,
             )
         adminView = RemoteUnlockAdminView(this)
-        adminView.setActionListeners(coordinator::requestArm, ::disarm, ::refreshStatus)
+        adminView.setActionListeners(
+            coordinator::requestArm,
+            ::disarm,
+            coordinator::requestEnableTrusted,
+            ::disableTrusted,
+            ::refreshStatus,
+        )
         setContentView(adminView)
     }
 
@@ -80,6 +86,12 @@ class RemoteUnlockAdminActivity :
     private fun disarm() {
         val success = runCatching { gateway.disarm() }.isSuccess
         adminView.showDisarmResult(success)
+        refreshStatus()
+    }
+
+    private fun disableTrusted() {
+        val success = runCatching { gateway.disableTrusted() }.isSuccess
+        adminView.showDisableTrustedResult(success)
         refreshStatus()
     }
 

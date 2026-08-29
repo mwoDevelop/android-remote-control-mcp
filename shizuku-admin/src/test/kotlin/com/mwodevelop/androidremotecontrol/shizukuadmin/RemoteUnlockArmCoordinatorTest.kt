@@ -75,6 +75,34 @@ class RemoteUnlockArmCoordinatorTest {
     }
 
     @Test
+    fun `trusted enable requires one foreground authentication and ignores duplicate callback`() {
+        val fixture = Fixture()
+        fixture.coordinator.onResume()
+
+        fixture.coordinator.requestEnableTrusted()
+        fixture.authenticator.complete(LocalAuthenticationResult.SUCCESS)
+        fixture.authenticator.repeatLast(LocalAuthenticationResult.SUCCESS)
+
+        assertEquals(1, fixture.gateway.enableTrustedCalls)
+        assertEquals(listOf(RemoteUnlockAdminMessage.TRUSTED_ENABLED), fixture.listener.messages)
+        assertEquals(1, fixture.listener.refreshes)
+        assertFalse(fixture.listener.busy)
+    }
+
+    @Test
+    fun `trusted provider failure is reported without arming one-shot`() {
+        val fixture = Fixture().also { it.gateway.failTrusted = true }
+        fixture.coordinator.onResume()
+
+        fixture.coordinator.requestEnableTrusted()
+        fixture.authenticator.complete(LocalAuthenticationResult.SUCCESS)
+
+        assertEquals(1, fixture.gateway.enableTrustedCalls)
+        assertEquals(0, fixture.gateway.armCalls)
+        assertEquals(listOf(RemoteUnlockAdminMessage.TRUSTED_ENABLE_FAILED), fixture.listener.messages)
+    }
+
+    @Test
     fun `arm request while stopped is ignored`() {
         val fixture = Fixture()
 
@@ -120,6 +148,8 @@ class RemoteUnlockArmCoordinatorTest {
     private class FakeGateway : RemoteUnlockAdminGateway {
         var armCalls = 0
         var failArm = false
+        var enableTrustedCalls = 0
+        var failTrusted = false
 
         override fun status() = RemoteUnlockAdminStatus(true, true, false, false, 0)
 
@@ -130,6 +160,22 @@ class RemoteUnlockArmCoordinatorTest {
         }
 
         override fun disarm() = RemoteUnlockAdminStatus(true, true, false, false, 0)
+
+        override fun enableTrusted(): RemoteUnlockAdminStatus {
+            ++enableTrustedCalls
+            if (failTrusted) error("provider failed")
+            return RemoteUnlockAdminStatus(
+                configured = true,
+                enabled = true,
+                armed = false,
+                rearmRequired = false,
+                remainingMs = 0,
+                mode = RemoteUnlockAdminMode.TRUSTED,
+                trustedActive = true,
+            )
+        }
+
+        override fun disableTrusted() = RemoteUnlockAdminStatus(true, true, false, false, 0)
     }
 
     private class FakeListener : RemoteUnlockArmCoordinatorListener {

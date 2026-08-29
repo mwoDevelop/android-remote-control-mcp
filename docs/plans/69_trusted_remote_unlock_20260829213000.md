@@ -2,7 +2,7 @@
 
 ## Status and baseline
 
-- Status: implementation authorized; deployment target is only `[REDACTED_DEVICE_ALIAS]`.
+- Status: implementation and automated qualification complete; live deployment target is only `[REDACTED_DEVICE_ALIAS]`.
 - Prepared on 2026-08-29 after fetching `upstream/main`; the official upstream contains no commits missing from the
   current fork branch.
 - Baseline: `dca467d`, with the one-shot policy from Plans 67–68 and the fork-owned `:shizuku-admin` extension.
@@ -44,49 +44,49 @@ The public MCP contract remains `android_admin_unlock_device` with an empty inpu
 
 ### 1. Policy model and persistent state
 
-- [ ] Add a stable `RemoteUnlockMode` (`ONE_SHOT`, `TRUSTED`) and expose only bounded mode/cooldown metadata in status.
-- [ ] Introduce a small authorization-policy strategy/decision boundary so the controller does not grow mode-specific
+- [x] Add a stable `RemoteUnlockMode` (`ONE_SHOT`, `TRUSTED`) and expose only bounded mode/cooldown metadata in status.
+- [x] Introduce a small authorization-policy strategy/decision boundary so the controller does not grow mode-specific
   PIN/backend behavior.
-- [ ] Preserve one-shot arm/consume semantics unchanged.
-- [ ] Add boot-bound trusted attempt/failure state, 30-second spacing and the three-failures/ten-minute limiter.
-- [ ] Migrate version-2 JSON to version 3 as `ONE_SHOT`; unknown/malformed mode fails closed.
-- [ ] Clear trusted state on provisioning, OAuth-policy replacement/disable and credential clear.
+- [x] Preserve one-shot arm/consume semantics unchanged.
+- [x] Add boot-bound trusted attempt/failure state, 30-second spacing and the three-failures/ten-minute limiter.
+- [x] Migrate version-2 JSON to version 3 as `ONE_SHOT`; unknown/malformed mode fails closed.
+- [x] Clear trusted state on provisioning, OAuth-policy replacement/disable and credential clear.
 
 ### 2. Controller behavior
 
-- [ ] Authorize an attempt only after configuration, enablement, Shizuku readiness and actual keyguard state checks.
-- [ ] Consume a one-shot authorization before decryption; retain trusted authorization after success.
-- [ ] Record success/failure through the policy boundary and preserve the existing generic failure result.
-- [ ] Keep mutex serialization, bounded settle time and zeroing of decrypted buffers unchanged.
+- [x] Authorize an attempt only after configuration, enablement, Shizuku readiness and actual keyguard state checks.
+- [x] Consume a one-shot authorization before decryption; retain trusted authorization after success.
+- [x] Record success/failure through the policy boundary and preserve the existing generic failure result.
+- [x] Keep mutex serialization, bounded settle time and zeroing of decrypted buffers unchanged.
 
 ### 3. Local administrator UI
 
-- [ ] Extend the shared provider contract with bounded `mode`, `trusted_active` and `cooldown_remaining_ms` fields.
-- [ ] Add fixed `enable_trusted` and `disable_trusted` operations. Enabling must reject every caller UID except the
+- [x] Extend the shared provider contract with bounded `mode`, `trusted_active` and `cooldown_remaining_ms` fields.
+- [x] Add fixed `enable_trusted` and `disable_trusted` operations. Enabling must reject every caller UID except the
   application UID; the activity calls it only after successful local authentication.
-- [ ] Retain one-shot Arm/Disarm controls and add authenticated `Enable trusted unlock` plus safe `Disable trusted
+- [x] Retain one-shot Arm/Disarm controls and add authenticated `Enable trusted unlock` plus safe `Disable trusted
   unlock`.
-- [ ] Clearly render that trusted mode allows repeated unlocks until disabled and that Shizuku remains required.
-- [ ] Preserve `FLAG_SECURE`, lifecycle cancellation, single-callback behavior and absence of secret/client metadata.
+- [x] Clearly render that trusted mode allows repeated unlocks until disabled and that Shizuku remains required.
+- [x] Preserve `FLAG_SECURE`, lifecycle cancellation, single-callback behavior and absence of secret/client metadata.
 
 ### 4. Automated tests and regressions
 
-- [ ] Unit-test mode migration, trusted persistence, limiter boundaries, reboot behavior, success reset, failure
+- [x] Unit-test mode parsing/default migration policy, trusted persistence, limiter boundaries, reboot behavior, success reset, failure
   blocking, one-shot compatibility, policy replacement and corrupt-state fail-closed behavior.
-- [ ] Unit-test controller decisions for one-shot, trusted, cooldown, unavailable Shizuku, already-unlocked and failed
+- [x] Unit-test controller decisions for one-shot, trusted, cooldown, unavailable Shizuku, already-unlocked and failed
   injection paths.
-- [ ] Unit-test UI mapping/coordinator behavior for enable, disable, authentication cancellation/error, lifecycle
+- [x] Unit-test UI mapping/coordinator behavior for enable, disable, authentication cancellation/error, lifecycle
   invalidation and duplicate callbacks.
-- [ ] Test provider same-UID enforcement and merged-manifest `DUMP` boundary.
-- [ ] Run repository shell tests, all JVM/module tests, privacy tests, `ktlintCheck`, `detekt`, E2E compilation, secret
+- [x] Test provider same-UID enforcement and merged-manifest `DUMP` boundary.
+- [x] Run repository shell tests, all JVM/module tests, privacy tests, `ktlintCheck`, `detekt`, E2E compilation, secret
   scans, signed `gmsRelease` build and merged-manifest verification.
-- [ ] Assert changed production paths remain absent from `upstream/main` or are pre-existing fork-owned paths.
+- [x] Assert changed production paths remain absent from `upstream/main` or are pre-existing fork-owned paths.
 
 ### 5. Documentation and configuration
 
-- [ ] Update root/tool documentation and `myconf/[REDACTED_DEVICE_ALIAS]` with mode semantics, recovery, rate limits and post-reboot
+- [x] Update root/tool documentation and `myconf/[REDACTED_DEVICE_ALIAS]` with mode semantics, recovery, rate limits and post-reboot
   Shizuku requirement.
-- [ ] Keep tracked configuration non-secret. Do not write the PIN, ciphertext, tokens, browser cookies or CDP data.
+- [x] Keep tracked configuration non-secret. Do not write the PIN, ciphertext, tokens, browser cookies or CDP data.
 - [ ] Record exact APK version, Git SHA, digest, certificate and live acceptance outcome after deployment.
 
 ## Delivery and live acceptance on [REDACTED_DEVICE_ALIAS]

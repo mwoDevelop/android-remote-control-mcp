@@ -384,7 +384,9 @@ a private local ref, builds the exact upstream commit in an isolated temporary w
 never deploys. The APK and a provenance manifest are copied to `build/channels/stable/` or `build/channels/edge/`.
 These are pure official-upstream builds, so they intentionally exclude this fork's custom commits and `myconf/`.
 Every build also compiles the pinned host `cloudflared` into ignored `build/host-tools/` and adds it to the test
-process `PATH`; the Cloudflare integration gate therefore does not depend on a separately installed host binary.
+process `PATH`; the Cloudflare integration gate therefore does not depend on a separately installed host binary. If
+Go or Maven is absent, the script extracts pinned toolchains from digest-pinned official containers into the same
+ignored directory, so no system-wide installation is required (Docker is the fallback prerequisite).
 
 ```bash
 ./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
@@ -399,13 +401,17 @@ Production and debug builds register exactly four reviewed Shizuku tools: `admin
 for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators and other critical
 system packages. The first three tools require the administrator bearer and reject OAuth clients such as ChatGPT.
 Remote unlock additionally accepts only the exact OAuth client
-configured locally during encrypted provisioning, and only after a one-shot local arm valid for at most 15 minutes.
+configured locally during encrypted provisioning. The local administrator can select a one-shot arm valid for at
+most 15 minutes or authenticate once to enable persistent `TRUSTED` mode. Trusted mode permits repeated unlocks until
+it is locally disabled, while enforcing at least 30 seconds between attempts and blocking after three failures in a
+boot-bound ten-minute window.
 Fork builds expose the separate `ARCP Administrator` launcher entry from the isolated `:shizuku-admin` module. After
-Android confirms a strong biometric or the current device credential, that screen can arm one attempt, show its
-remaining monotonic lifetime, or disarm it without reading the PIN. The existing DUMP-protected ADB provider remains
-the provisioning and recovery path; no upstream UI class or navigation route is modified.
+Android confirms a strong biometric or the current device credential, that screen can arm one attempt or enable
+trusted unlock, show the bounded policy state, and reduce authorization without reading the PIN. The existing
+DUMP-protected ADB provider remains the provisioning and recovery path, but a shell/ADB caller cannot enable trusted
+mode; no upstream UI class or navigation route is modified.
 They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
-activation after a reboot remains a manual administrator gate.
+activation and the first ordinary device unlock after a reboot remain manual administrator gates.
 
 The isolated [REDACTED_DEVICE_ALIAS] debug POC on loopback port `8081` is historical/test tooling and is not a rollout tier. Its package
 and ADB forward were removed after the owner-signed production acceptance on 2026-08-27. For a future local-only
