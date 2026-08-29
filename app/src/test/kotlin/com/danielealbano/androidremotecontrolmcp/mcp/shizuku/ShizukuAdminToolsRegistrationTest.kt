@@ -91,9 +91,11 @@ class ShizukuAdminToolsRegistrationTest {
             authorizedClientId: String?,
         ) = Unit
 
-        override fun arm(nowMs: Long) = Unit
+        override fun arm() = Unit
 
-        override fun consumeArm(nowMs: Long) = false
+        override fun consumeArm() = false
+
+        override fun disarm() = Unit
 
         override fun recordFailure() = Unit
 

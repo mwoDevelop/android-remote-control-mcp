@@ -400,6 +400,10 @@ for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active devic
 system packages. The first three tools require the administrator bearer and reject OAuth clients such as ChatGPT.
 Remote unlock additionally accepts only the exact OAuth client
 configured locally during encrypted provisioning, and only after a one-shot local arm valid for at most 15 minutes.
+Fork builds expose the separate `ARCP Administrator` launcher entry from the isolated `:shizuku-admin` module. After
+Android confirms a strong biometric or the current device credential, that screen can arm one attempt, show its
+remaining monotonic lifetime, or disarm it without reading the PIN. The existing DUMP-protected ADB provider remains
+the provisioning and recovery path; no upstream UI class or navigation route is modified.
 They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
 activation after a reboot remains a manual administrator gate.
 

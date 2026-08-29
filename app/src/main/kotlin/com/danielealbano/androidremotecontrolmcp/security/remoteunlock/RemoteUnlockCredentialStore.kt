@@ -1,6 +1,8 @@
 package com.danielealbano.androidremotecontrolmcp.security.remoteunlock
 
 import android.content.Context
+import android.os.SystemClock
+import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
@@ -21,10 +23,71 @@ data class RemoteUnlockStatus(
     val configured: Boolean,
     val enabled: Boolean,
     val authorizedClientId: String?,
-    val armedUntilMs: Long,
+    val remainingArmMs: Long,
     val rearmRequired: Boolean,
 ) {
-    fun isArmed(nowMs: Long): Boolean = configured && enabled && !rearmRequired && armedUntilMs > nowMs
+    val armed: Boolean
+        get() = configured && enabled && !rearmRequired && remainingArmMs > 0L
+}
+
+internal data class RemoteUnlockClockSnapshot(
+    val bootCount: Int,
+    val elapsedRealtimeMs: Long,
+)
+
+internal data class RemoteUnlockArmWindow(
+    val bootCount: Int = INVALID_BOOT_COUNT,
+    val deadlineElapsedRealtimeMs: Long = 0L,
+) {
+    companion object {
+        const val INVALID_BOOT_COUNT = -1
+    }
+}
+
+internal object RemoteUnlockArmWindowPolicy {
+    fun arm(
+        snapshot: RemoteUnlockClockSnapshot,
+        lifetimeMs: Long,
+    ): RemoteUnlockArmWindow {
+        require(snapshot.bootCount >= 0 && snapshot.elapsedRealtimeMs >= 0L && lifetimeMs > 0L)
+        return RemoteUnlockArmWindow(
+            bootCount = snapshot.bootCount,
+            deadlineElapsedRealtimeMs = Math.addExact(snapshot.elapsedRealtimeMs, lifetimeMs),
+        )
+    }
+
+    fun remainingMs(
+        window: RemoteUnlockArmWindow,
+        snapshot: RemoteUnlockClockSnapshot?,
+    ): Long {
+        val valid =
+            snapshot != null &&
+                snapshot.bootCount >= 0 &&
+                snapshot.elapsedRealtimeMs >= 0L &&
+                window.bootCount == snapshot.bootCount &&
+                window.deadlineElapsedRealtimeMs > 0L
+        return if (valid) {
+            (window.deadlineElapsedRealtimeMs - requireNotNull(snapshot).elapsedRealtimeMs).coerceAtLeast(0L)
+        } else {
+            0L
+        }
+    }
+}
+
+internal fun interface RemoteUnlockArmClock {
+    fun snapshot(): RemoteUnlockClockSnapshot
+}
+
+private class AndroidRemoteUnlockArmClock(
+    context: Context,
+) : RemoteUnlockArmClock {
+    private val contentResolver = context.contentResolver
+
+    override fun snapshot() =
+        RemoteUnlockClockSnapshot(
+            bootCount = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT),
+            elapsedRealtimeMs = SystemClock.elapsedRealtime(),
+        )
 }
 
 data class RemoteUnlockProvisioningKey(
@@ -47,9 +110,11 @@ interface RemoteUnlockCredentialStore {
         authorizedClientId: String?,
     )
 
-    fun arm(nowMs: Long = System.currentTimeMillis())
+    fun arm()
 
-    fun consumeArm(nowMs: Long = System.currentTimeMillis()): Boolean
+    fun consumeArm(): Boolean
+
+    fun disarm()
 
     fun recordFailure()
 
@@ -66,6 +131,7 @@ class AndroidRemoteUnlockCredentialStore
         @ApplicationContext context: Context,
     ) : RemoteUnlockCredentialStore {
         private val stateFile = AtomicFile(File(context.filesDir, STATE_FILE_NAME))
+        private val armClock: RemoteUnlockArmClock = AndroidRemoteUnlockArmClock(context)
         private val lock = Any()
 
         override fun provisioningKey(): RemoteUnlockProvisioningKey =
@@ -77,7 +143,10 @@ class AndroidRemoteUnlockCredentialStore
                 )
             }
 
-        override fun status(): RemoteUnlockStatus = synchronized(lock) { readState().toStatus() }
+        override fun status(): RemoteUnlockStatus =
+            synchronized(lock) {
+                readState().toStatus(safeClockSnapshot())
+            }
 
         override fun provision(
             keyVersion: Int,
@@ -94,7 +163,7 @@ class AndroidRemoteUnlockCredentialStore
                     ciphertextBase64 = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
                     enabled = false,
                     authorizedClientId = null,
-                    armedUntilMs = 0L,
+                    armWindow = RemoteUnlockArmWindow(),
                     rearmRequired = false,
                 ),
             )
@@ -113,33 +182,44 @@ class AndroidRemoteUnlockCredentialStore
                 current.copy(
                     enabled = enabled,
                     authorizedClientId = normalizedClient,
-                    armedUntilMs = 0L,
+                    armWindow = RemoteUnlockArmWindow(),
                 ),
             )
         }
 
-        override fun arm(nowMs: Long) =
+        override fun arm() =
             synchronized(lock) {
                 val current = readState()
                 check(current.ciphertextBase64.isNotEmpty() && current.enabled && current.authorizedClientId != null) {
                     "Remote unlock is not configured and enabled"
                 }
-                writeState(current.copy(armedUntilMs = nowMs + ARM_LIFETIME_MS, rearmRequired = false))
+                writeState(
+                    current.copy(
+                        armWindow = RemoteUnlockArmWindowPolicy.arm(armClock.snapshot(), ARM_LIFETIME_MS),
+                        rearmRequired = false,
+                    ),
+                )
             }
 
-        override fun consumeArm(nowMs: Long): Boolean =
+        override fun consumeArm(): Boolean =
             synchronized(lock) {
                 val current = readState()
-                if (!current.toStatus().isArmed(nowMs)) return@synchronized false
-                writeState(current.copy(armedUntilMs = 0L))
+                if (!current.toStatus(safeClockSnapshot()).armed) return@synchronized false
+                writeState(current.copy(armWindow = RemoteUnlockArmWindow()))
                 true
+            }
+
+        override fun disarm() =
+            synchronized(lock) {
+                val current = readState()
+                writeState(current.copy(armWindow = RemoteUnlockArmWindow()))
             }
 
         override fun recordFailure() =
             synchronized(lock) {
                 val current = readState()
                 if (current.ciphertextBase64.isNotEmpty()) {
-                    writeState(current.copy(armedUntilMs = 0L, rearmRequired = true))
+                    writeState(current.copy(armWindow = RemoteUnlockArmWindow(), rearmRequired = true))
                 }
             }
 
@@ -230,19 +310,21 @@ class AndroidRemoteUnlockCredentialStore
             }
         }
 
+        private fun safeClockSnapshot(): RemoteUnlockClockSnapshot? = runCatching { armClock.snapshot() }.getOrNull()
+
         private data class StoredState(
             val ciphertextBase64: String = "",
             val enabled: Boolean = false,
             val authorizedClientId: String? = null,
-            val armedUntilMs: Long = 0L,
+            val armWindow: RemoteUnlockArmWindow = RemoteUnlockArmWindow(),
             val rearmRequired: Boolean = false,
         ) {
-            fun toStatus() =
+            fun toStatus(snapshot: RemoteUnlockClockSnapshot?) =
                 RemoteUnlockStatus(
                     configured = ciphertextBase64.isNotEmpty(),
                     enabled = enabled,
                     authorizedClientId = authorizedClientId,
-                    armedUntilMs = armedUntilMs,
+                    remainingArmMs = RemoteUnlockArmWindowPolicy.remainingMs(armWindow, snapshot),
                     rearmRequired = rearmRequired,
                 )
 
@@ -252,18 +334,31 @@ class AndroidRemoteUnlockCredentialStore
                     .put("ciphertext", ciphertextBase64)
                     .put("enabled", enabled)
                     .put("authorized_client_id", authorizedClientId)
-                    .put("armed_until_ms", armedUntilMs)
+                    .put("armed_boot_count", armWindow.bootCount)
+                    .put("armed_elapsed_realtime_deadline_ms", armWindow.deadlineElapsedRealtimeMs)
                     .put("rearm_required", rearmRequired)
 
             companion object {
-                fun fromJson(json: JSONObject) =
-                    StoredState(
+                fun fromJson(json: JSONObject): StoredState {
+                    val version = json.optInt("version", 1)
+                    val armWindow =
+                        if (version >= STATE_VERSION) {
+                            RemoteUnlockArmWindow(
+                                bootCount = json.optInt("armed_boot_count", RemoteUnlockArmWindow.INVALID_BOOT_COUNT),
+                                deadlineElapsedRealtimeMs = json.optLong("armed_elapsed_realtime_deadline_ms"),
+                            )
+                        } else {
+                            // Version 1 used a wall-clock deadline. It cannot be migrated safely and must fail closed.
+                            RemoteUnlockArmWindow()
+                        }
+                    return StoredState(
                         ciphertextBase64 = json.optString("ciphertext"),
                         enabled = json.optBoolean("enabled"),
                         authorizedClientId = json.optString("authorized_client_id").takeIf { it.isNotEmpty() },
-                        armedUntilMs = json.optLong("armed_until_ms"),
+                        armWindow = armWindow,
                         rearmRequired = json.optBoolean("rearm_required"),
                     )
+                }
             }
         }
 
@@ -271,7 +366,7 @@ class AndroidRemoteUnlockCredentialStore
             const val ANDROID_KEYSTORE = "AndroidKeyStore"
             const val KEY_ALIAS = "arcp_remote_unlock_rsa_v1"
             const val KEY_VERSION = 1
-            const val STATE_VERSION = 1
+            const val STATE_VERSION = 2
             const val STATE_FILE_NAME = "remote_unlock_credential_v1.json"
             const val CIPHER_TRANSFORMATION = "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
             const val RSA_KEY_SIZE = 2048

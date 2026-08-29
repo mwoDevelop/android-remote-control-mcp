@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_unlock_admin_launcher">ARCP Administrator</string>
+    <string name="remote_unlock_admin_title">Remote unlock administrator</string>
+    <string name="remote_unlock_admin_description">Arm one local, time-limited unlock attempt. The PIN never appears on this screen or leaves the device.</string>
+    <string name="remote_unlock_admin_loading">Loading status…</string>
+    <string name="remote_unlock_admin_not_configured">Remote unlock is not configured.</string>
+    <string name="remote_unlock_admin_disabled">Remote unlock is configured but disabled.</string>
+    <string name="remote_unlock_admin_rearm_required">The previous attempt failed. Local rearming is required.</string>
+    <string name="remote_unlock_admin_armed">Armed: one attempt, %1$d seconds remaining.</string>
+    <string name="remote_unlock_admin_ready">Ready to arm locally.</string>
+    <string name="remote_unlock_admin_shizuku_ready">Shizuku: ready</string>
+    <string name="remote_unlock_admin_shizuku_unavailable">Shizuku: unavailable; start it before remote unlock.</string>
+    <string name="remote_unlock_admin_status_error">The local remote-unlock status is unavailable.</string>
+    <string name="remote_unlock_admin_arm">Arm one attempt for 15 minutes</string>
+    <string name="remote_unlock_admin_disarm">Disarm now</string>
+    <string name="remote_unlock_admin_refresh">Refresh status</string>
+    <string name="remote_unlock_admin_auth_title">Authorize remote unlock</string>
+    <string name="remote_unlock_admin_auth_subtitle">Confirm with the device credential or a strong biometric.</string>
+    <string name="remote_unlock_admin_message_armed">One remote-unlock attempt is armed.</string>
+    <string name="remote_unlock_admin_message_disarmed">Remote unlock is disarmed.</string>
+    <string name="remote_unlock_admin_message_auth_cancelled">Authentication was cancelled. Nothing was armed.</string>
+    <string name="remote_unlock_admin_message_auth_error">Local authentication is unavailable or failed.</string>
+    <string name="remote_unlock_admin_message_arm_failed">Authentication succeeded, but arming failed.</string>
+    <string name="remote_unlock_admin_message_disarm_failed">Disarming failed.</string>
+</resources>

@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import com.mwodevelop.androidremotecontrol.shizukuadmin.RemoteUnlockAdminContract
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -51,8 +52,13 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
                 statusBundle(store.status())
             }
 
-            METHOD_ARM -> {
+            RemoteUnlockAdminContract.METHOD_ARM -> {
                 store.arm()
+                statusBundle(store.status())
+            }
+
+            RemoteUnlockAdminContract.METHOD_DISARM -> {
+                store.disarm()
                 statusBundle(store.status())
             }
 
@@ -61,7 +67,7 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
                 statusBundle(store.status())
             }
 
-            METHOD_STATUS -> {
+            RemoteUnlockAdminContract.METHOD_STATUS -> {
                 statusBundle(store.status())
             }
 
@@ -73,10 +79,11 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
 
     private fun statusBundle(status: RemoteUnlockStatus) =
         Bundle().apply {
-            putBoolean("configured", status.configured)
-            putBoolean("enabled", status.enabled)
-            putBoolean("armed", status.isArmed(System.currentTimeMillis()))
-            putBoolean("rearm_required", status.rearmRequired)
+            putBoolean(RemoteUnlockAdminContract.KEY_CONFIGURED, status.configured)
+            putBoolean(RemoteUnlockAdminContract.KEY_ENABLED, status.enabled)
+            putBoolean(RemoteUnlockAdminContract.KEY_ARMED, status.armed)
+            putBoolean(RemoteUnlockAdminContract.KEY_REARM_REQUIRED, status.rearmRequired)
+            putLong(RemoteUnlockAdminContract.KEY_REMAINING_MS, status.remainingArmMs)
             putString("authorized_client_id", status.authorizedClientId)
         }
 
@@ -118,8 +125,6 @@ class RemoteUnlockProvisioningProvider : ContentProvider() {
         const val METHOD_GET_PUBLIC_KEY = "get_public_key"
         const val METHOD_PROVISION = "provision"
         const val METHOD_SET_POLICY = "set_policy"
-        const val METHOD_ARM = "arm"
         const val METHOD_CLEAR = "clear"
-        const val METHOD_STATUS = "status"
     }
 }
