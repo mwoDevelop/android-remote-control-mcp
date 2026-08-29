@@ -2,7 +2,7 @@
 
 ## Status and baseline
 
-- Status: implementation and automated qualification complete; live deployment target is only `[REDACTED_DEVICE_ALIAS]`.
+- Status: complete; implementation, automated qualification and live acceptance passed only on `[REDACTED_DEVICE_ALIAS]`.
 - Prepared on 2026-08-29 after fetching `upstream/main`; the official upstream contains no commits missing from the
   current fork branch.
 - Baseline: `dca467d`, with the one-shot policy from Plans 67–68 and the fork-owned `:shizuku-admin` extension.
@@ -87,7 +87,7 @@ The public MCP contract remains `android_admin_unlock_device` with an empty inpu
 - [x] Update root/tool documentation and `myconf/[REDACTED_DEVICE_ALIAS]` with mode semantics, recovery, rate limits and post-reboot
   Shizuku requirement.
 - [x] Keep tracked configuration non-secret. Do not write the PIN, ciphertext, tokens, browser cookies or CDP data.
-- [ ] Record exact APK version, Git SHA, digest, certificate and live acceptance outcome after deployment.
+- [x] Record exact APK version, Git SHA, digest, certificate and live acceptance outcome after deployment.
 
 ## Delivery and live acceptance on [REDACTED_DEVICE_ALIAS]
 
@@ -125,3 +125,25 @@ Complete means: plan and implementation are committed and pushed; automated gate
 installed only on [REDACTED_DEVICE_ALIAS] without data loss; trusted mode is locally authenticated; two separate remote unlocks succeed
 without rearming; ChatGPT performs a real unlock through the [REDACTED_DEVICE_ALIAS] connector over Cloudflare; ordinary/admin/OAuth and
 network regressions pass; Wireless debugging is off again; and non-secret deployment evidence is committed and pushed.
+
+## Live acceptance evidence — 2026-08-29
+
+- Installed with `adb install -r`, preserving application data, only on verified `Xiaomi/[REDACTED_OWNER_VALUE]/vili`.
+- APK: `1.12.0-dev.74+a1d3359`, version code `20010070`, source commit
+  `[REDACTED_RESOURCE_ID]`, SHA-256
+  `[REDACTED_RESOURCE_ID]`.
+- Owner signing-certificate SHA-256:
+  `[REDACTED_RESOURCE_ID]`.
+- Local system authentication enabled `TRUSTED`; device status reported configured/enabled/trusted with zero cooldown.
+- Two separate public-Cloudflare bearer cycles changed the real keyguard from showing to not showing without rearming.
+- ChatGPT project chat `Odblokowanie [REDACTED_DEVICE_ALIAS]` invoked the OAuth connector and reported success; an independent keyguard
+  read changed to not showing.
+- Unauthenticated MCP returned `401`; OAuth metadata returned `200`; bearer `tools/list` exposed 61 tools and exactly
+  four reviewed admin tools. Screen-state, Shizuku top-window and protected-Qustodio-uninstall regressions passed.
+- No ARCP fatal/ANR entry was present in the inspected recent logcat window. The service, Accessibility, notification
+  listener and Shizuku were running before the final ADB shutdown.
+- USB and Wireless debugging were disabled after acceptance. Wi-Fi ports `5555`, the temporary TLS ADB port and
+  application port `8080` were closed; public MCP still returned `401`, and authenticated screen/Shizuku calls still
+  passed after ADB shutdown.
+- Forward rollback artifact (ignored): `build/rollback/[REDACTED_DEVICE_ALIAS]/forward-plan69-rollback.apk`, version code `20010079`,
+  SHA-256 `[REDACTED_RESOURCE_ID]`.
