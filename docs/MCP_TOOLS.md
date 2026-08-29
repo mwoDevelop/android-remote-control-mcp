@@ -183,6 +183,11 @@ provide, retrieve, or replace the PIN through MCP. The administrator bearer is a
 exact locally configured server-issued client ID. A local DUMP-gated administrator action must arm one attempt for at
 most 15 minutes.
 
+Fork builds also provide a local `ARCP Administrator` launcher activity. It requires Android strong-biometric or
+device-credential authentication before arming and can disarm without authentication. Its arm deadline is bound to
+Android `BOOT_COUNT` and `elapsedRealtime`, so a reboot, expiry, or unavailable clock fails closed. The activity never
+receives the PIN and does not make arming remotely callable; ADB remains the setup/recovery path.
+
 Stable result statuses are `unlocked`, `already_unlocked`, `disabled`, `not_configured`, `temporarily_blocked`,
 `unavailable`, and `unlock_failed_rearm_required`. A failed attempt latches the operation until a local rearm. Other
 Shizuku administrator tools remain bearer-only.

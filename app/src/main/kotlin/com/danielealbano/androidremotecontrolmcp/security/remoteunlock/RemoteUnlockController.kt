@@ -43,7 +43,7 @@ class RemoteUnlockController
                 val status = store.status()
                 if (!status.configured) return@withLock RemoteUnlockOutcome.NOT_CONFIGURED
                 if (!status.enabled) return@withLock RemoteUnlockOutcome.DISABLED
-                if (!status.isArmed(System.currentTimeMillis())) {
+                if (!status.armed) {
                     return@withLock RemoteUnlockOutcome.TEMPORARILY_BLOCKED
                 }
                 if (backend.readiness() != PrivilegedAdminReadiness.Ready) {

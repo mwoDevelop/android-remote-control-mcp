@@ -477,6 +477,12 @@ validate_tunnel_payload() {
   done
 }
 
+validate_admin_ui_manifest() {
+  local apk="$1" analyzer
+  analyzer="$(resolve_android_tool apkanalyzer)"
+  node "$REPO_ROOT/scripts/verify-admin-ui-manifest.mjs" "$analyzer" "$apk"
+}
+
 apk_metadata() {
   local apk="$1" analyzer signer app_id version_code version_name digest
   analyzer="$(resolve_android_tool apkanalyzer)"
@@ -523,6 +529,7 @@ build_variant() {
   mapfile -t apks < <(find "app/build/outputs/apk/$FLAVOR/$BUILD_TYPE" -maxdepth 1 -type f -name '*.apk' | sort)
   ((${#apks[@]} == 1)) || die "Expected exactly one APK for $VARIANT, found ${#apks[@]}"
   validate_tunnel_payload "${apks[0]}"
+  validate_admin_ui_manifest "${apks[0]}"
   local manifest
   manifest="$(write_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")"
   printf 'Build complete: %s\nManifest: %s\n' "${apks[0]}" "$manifest"
