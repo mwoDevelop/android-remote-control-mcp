@@ -182,6 +182,22 @@ read_secret_variable() {
   printf '%s' "$raw"
 }
 
+resolve_ngrok_test_token() {
+  local token="${NGROK_AUTHTOKEN:-}" secret_file
+  if [[ -n "$token" ]]; then
+    printf '%s' "$token"
+    return
+  fi
+  secret_file="$REPO_ROOT/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
+  [[ -r "$secret_file" ]] ||
+    die "NGROK_AUTHTOKEN is unset and the [REDACTED_DEVICE_ALIAS] secrets file is unavailable"
+  token="$(read_secret_variable "$secret_file" NGROK_AUTHTOKEN)" ||
+    die "Invalid or duplicate NGROK_AUTHTOKEN assignment in the [REDACTED_DEVICE_ALIAS] secrets file"
+  [[ -n "$token" ]] ||
+    die "NGROK_AUTHTOKEN is empty; the mandatory ngrok integration test cannot run"
+  printf '%s' "$token"
+}
+
 validate_secret_file() {
   local file
   file="$(device_secret_file)"
@@ -514,6 +530,7 @@ write_build_manifest() {
 }
 
 build_variant() {
+  local ngrok_test_token
   require_command node
   variant_parts
   cd "$REPO_ROOT"
@@ -523,7 +540,8 @@ build_variant() {
   prepare_host_cloudflared
   prepare_native_tunnel_payload
   ./gradlew ktlintCheck detekt
-  ./gradlew :app:test :privacy:test :privacy-benchmark:test
+  ngrok_test_token="$(resolve_ngrok_test_token)"
+  NGROK_AUTHTOKEN="$ngrok_test_token" ./gradlew :app:test :privacy:test :privacy-benchmark:test
   if [[ "$SKIP_E2E" == false ]]; then ./gradlew :e2e-tests:compileTestKotlin; fi
   ./gradlew "assemble${VARIANT^}"
   mapfile -t apks < <(find "app/build/outputs/apk/$FLAVOR/$BUILD_TYPE" -maxdepth 1 -type f -name '*.apk' | sort)
