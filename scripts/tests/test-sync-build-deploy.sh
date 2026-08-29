@@ -261,6 +261,28 @@ test_secret_reader_does_not_execute_or_export_pin() {
   pass "secret reader neither executes nor exports unrelated [REDACTED_DEVICE_ALIAS]_PIN"
 }
 
+test_ngrok_test_token_resolution() {
+  local repo secret value
+  repo="$(new_repo)"
+  mkdir -p "$repo/myconf/[REDACTED_DEVICE_ALIAS]"
+  secret="$repo/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
+  printf 'NGROK_AUTHTOKEN=file-token\n' >"$secret"
+  chmod 600 "$secret"
+  (
+    eval "$(sed -n '/^read_secret_variable() {/,/^}/p' "$SOURCE_SCRIPT")"
+    eval "$(sed -n '/^resolve_ngrok_test_token() {/,/^}/p' "$SOURCE_SCRIPT")"
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    REPO_ROOT="$repo"
+    unset NGROK_AUTHTOKEN
+    value="$(resolve_ngrok_test_token)"
+    [[ "$value" == "file-token" ]]
+    NGROK_AUTHTOKEN="environment-token"
+    value="$(resolve_ngrok_test_token)"
+    [[ "$value" == "environment-token" ]]
+  )
+  pass "build resolves the ngrok integration credential without sourcing unrelated secrets"
+}
+
 test_production_listener_safety() {
   local output status
   eval "$(sed -n '/^verify_loopback_binding() {/,/^}/p' "$SOURCE_SCRIPT")"
@@ -336,6 +358,7 @@ test_deploy_preview
 test_all_preview_has_no_sync
 test_ambiguous_adb
 test_secret_reader_does_not_execute_or_export_pin
+test_ngrok_test_token_resolution
 test_production_listener_safety
 test_tunnel_payload_gate
 
