@@ -6,6 +6,10 @@ REPO_ROOT="${ARCP_REPO_ROOT_OVERRIDE:-$(git -C "$SCRIPT_DIR" rev-parse --show-to
 PACKAGE_ID="com.danielealbano.androidremotecontrolmcp"
 OFFICIAL_UPSTREAM="https://github.com/danielealbano/android-remote-control-mcp.git"
 DEFAULT_VARIANT="gmsRelease"
+BOOTSTRAP_GO_VERSION="1.26.7"
+BOOTSTRAP_GO_IMAGE="golang@sha256:b17af760035fc2f338eed92d448a6c67f2d45438844fc6c60678fa5f99e44b57"
+BOOTSTRAP_MAVEN_VERSION="3.9.11"
+BOOTSTRAP_MAVEN_IMAGE="maven@sha256:922927df2c662cdd47ddb116443d6bec4696cfae3de1a0ddac8fcc7b87ce61ae"
 APPLY=false
 DEVICE=""
 SERIAL=""
@@ -476,6 +480,58 @@ prepare_host_cloudflared() {
   export PATH
 }
 
+prepare_go_toolchain() {
+  local host_tools_dir go_root temporary_dir container_id=""
+  if command -v go >/dev/null 2>&1; then return; fi
+
+  require_command docker
+  host_tools_dir="$REPO_ROOT/build/host-tools"
+  go_root="$host_tools_dir/go-$BOOTSTRAP_GO_VERSION"
+  mkdir -p "$host_tools_dir"
+  if [[ ! -x "$go_root/bin/go" ]]; then
+    temporary_dir="$(mktemp -d "$host_tools_dir/.go-toolchain.XXXXXX")"
+    container_id="$(docker create "$BOOTSTRAP_GO_IMAGE")"
+    if ! docker cp "$container_id:/usr/local/go" "$temporary_dir/go"; then
+      docker rm -f "$container_id" >/dev/null 2>&1 || true
+      rm -rf -- "$temporary_dir"
+      die "Cannot extract the pinned Go toolchain from $BOOTSTRAP_GO_IMAGE"
+    fi
+    docker rm "$container_id" >/dev/null
+    mv "$temporary_dir/go" "$go_root"
+    rmdir "$temporary_dir"
+  fi
+  PATH="$go_root/bin:$PATH"
+  export PATH
+  [[ "$(go version)" == "go version go$BOOTSTRAP_GO_VERSION "* ]] ||
+    die "Pinned Go bootstrap has an unexpected version"
+}
+
+prepare_maven_toolchain() {
+  local host_tools_dir maven_root temporary_dir container_id=""
+  if command -v mvn >/dev/null 2>&1; then return; fi
+
+  require_command docker
+  host_tools_dir="$REPO_ROOT/build/host-tools"
+  maven_root="$host_tools_dir/maven-$BOOTSTRAP_MAVEN_VERSION"
+  mkdir -p "$host_tools_dir"
+  if [[ ! -x "$maven_root/bin/mvn" ]]; then
+    temporary_dir="$(mktemp -d "$host_tools_dir/.maven-toolchain.XXXXXX")"
+    container_id="$(docker create "$BOOTSTRAP_MAVEN_IMAGE")"
+    if ! docker cp "$container_id:/usr/share/maven" "$temporary_dir/maven"; then
+      docker rm -f "$container_id" >/dev/null 2>&1 || true
+      rm -rf -- "$temporary_dir"
+      die "Cannot extract the pinned Maven toolchain from $BOOTSTRAP_MAVEN_IMAGE"
+    fi
+    docker rm "$container_id" >/dev/null
+    mv "$temporary_dir/maven" "$maven_root"
+    rmdir "$temporary_dir"
+  fi
+  PATH="$maven_root/bin:$PATH"
+  export PATH
+  [[ "$(mvn --version | head -1)" == "Apache Maven $BOOTSTRAP_MAVEN_VERSION "* ]] ||
+    die "Pinned Maven bootstrap has an unexpected version"
+}
+
 prepare_native_tunnel_payload() {
   require_command make
   make -C "$REPO_ROOT" compile-cloudflared compile-ngrok-native
@@ -537,6 +593,8 @@ build_variant() {
   if [[ "${ARCP_CHANNEL_BUILD:-false}" != true ]]; then
     scripts/verify-device-configs.sh
   fi
+  prepare_go_toolchain
+  prepare_maven_toolchain
   prepare_host_cloudflared
   prepare_native_tunnel_payload
   ./gradlew ktlintCheck detekt
