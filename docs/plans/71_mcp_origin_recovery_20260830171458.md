@@ -93,42 +93,42 @@ changing PINs, enabling permanent remote debugging, or rewriting upstream servic
 
 ## User Story 1 — OCP recovery extension
 
-- [ ] Add a small `OriginHealthProbe` boundary and loopback HTTP implementation with bounded timeouts and no response
+- [x] Add a small `OriginHealthProbe` boundary and loopback HTTP implementation with bounded timeouts and no response
   body logging.
-- [ ] Add a pure `OriginRecoveryPolicy` state machine covering startup grace, connected/disconnected gating,
+- [x] Add a pure `OriginRecoveryPolicy` state machine covering startup grace, connected/disconnected gating,
   consecutive failures and healthy/disconnected reset.
-- [ ] Add `OriginRecoverySupervisor` that owns the coroutine/timing mechanics and exposes only start/stop plus a
+- [x] Add `OriginRecoverySupervisor` that owns the coroutine/timing mechanics and exposes only start/stop plus a
   recovery callback.
-- [ ] Add a `RecoveryCoordinator` with persistent rolling-window circuit breaker, injected clock, cancellable scheduler
+- [x] Add a `RecoveryCoordinator` with persistent rolling-window circuit breaker, injected clock, cancellable scheduler
   and generation token. It never revives an explicit stop.
-- [ ] Add a lifecycle/exit diagnostic adapter that reports a bounded Android exit-reason category and an unclean prior
+- [x] Add a lifecycle/exit diagnostic adapter that reports a bounded Android exit-reason category and an unclean prior
   generation marker without storing process arguments, URLs, tokens or client IDs.
-- [ ] Keep all policy logic and Android adapters in new fork-owned files; the upstream service integration must remain
+- [x] Keep all policy logic and Android adapters in new fork-owned files; the upstream service integration must remain
   declarative and small.
 
 ## User Story 2 — OCP process integration
 
-- [ ] Install one non-exported fork-owned initializer through the manifest; do not edit upstream-owned classes.
-- [ ] Start supervision only when the public server status is `Running` and tunnel status is `Connected`; derive the
+- [x] Install one non-exported fork-owned initializer through the manifest; do not edit upstream-owned classes.
+- [x] Start supervision only when the public server status is `Running` and tunnel status is `Connected`; derive the
   configured port from the running status.
-- [ ] On `RecoveryRequired`, submit the reason to the coordinator, stop the service without changing persisted intent,
+- [x] On `RecoveryRequired`, submit the reason to the coordinator, stop the service without changing persisted intent,
   and wait for public `Stopped` before scheduling a restart.
-- [ ] The delayed callback must verify its generation and the bounded read of persisted `server_running`; an
+- [x] The delayed callback must verify its generation and the bounded read of persisted `server_running`; an
   unreadable/timed-out intent fails closed.
-- [ ] Stop/cancel the supervisor on disconnect/stop, and mark a clean service generation only after Running→Stopped.
+- [x] Stop/cancel the supervisor on disconnect/stop, and mark a clean service generation only after Running→Stopped.
 - [ ] Prove normal start, explicit stop, upstream tunnel recovery and package-update recovery remain unchanged.
 
 ## User Story 3 — Automated verification
 
-- [ ] Unit-test policy transitions: grace, first/second/third failure, healthy reset, disconnected tunnel and duplicate
+- [x] Unit-test policy transitions: grace, first/second/third failure, healthy reset, disconnected tunnel and duplicate
   callbacks.
-- [ ] Unit-test HTTP probe classification with a local test server plus refused connection, timeout and non-200 cases.
-- [ ] Unit-test lifecycle diagnostics and redaction; raw exception text/response body must not enter durable logs.
-- [ ] Inject monotonic clock, delay/scheduler, dispatcher and transport probe so unit tests use virtual time rather than
+- [x] Unit-test HTTP probe classification with a local test server plus refused connection, timeout and non-200 cases.
+- [x] Unit-test lifecycle diagnostics and redaction; raw exception text/response body must not enter durable logs.
+- [x] Inject monotonic clock, delay/scheduler, dispatcher and transport probe so unit tests use virtual time rather than
   sleeping.
-- [ ] Test third-failure versus explicit-stop races, stale callbacks from an old generation, a new explicit start during
+- [x] Test third-failure versus explicit-stop races, stale callbacks from an old generation, a new explicit start during
   teardown, persisted-intent timeout and a late probe after cancellation.
-- [ ] Test that the process integration starts/stops the extension and schedules exactly one restart without reviving
+- [x] Test that the process integration starts/stops the extension and schedules exactly one restart without reviving
   an explicit stop.
 - [ ] Run formatting, detekt, unit tests for `:shizuku-admin` and `:app`, relevant integration tests, merged-manifest
   checks and the repository deployment-script test suite.
@@ -137,49 +137,76 @@ changing PINs, enabling permanent remote debugging, or rewriting upstream servic
 
 ## User Story 4 — [REDACTED_DEVICE_ALIAS] staged deployment and stabilization
 
-- [ ] Before enabling ADB, confirm public baseline: `/health=200`, OAuth discovery `=200`, unauthenticated `/mcp=401`,
+- [x] Before enabling ADB, confirm public baseline: `/health=200`, OAuth discovery `=200`, unauthenticated `/mcp=401`,
   Cloudflare tunnel connected, no Wi-Fi listener on port 8080.
-- [ ] Use a short, explicitly bounded ADB deployment window; verify the device identity and production signer before
+- [x] Use a short, explicitly bounded ADB deployment window; verify the device identity and production signer before
   `adb install -r`. Preserve application data and stop on any signer/identity mismatch.
-- [ ] Verify Android battery-optimization exemption and Samsung background policy. Record the state; do not silently
+- [x] Verify Android battery-optimization exemption and Samsung background policy. Record the state; do not silently
   change unrelated power or administrator settings.
-- [ ] Install the qualified release, restore/restart only the saved ARCP service configuration if required, and verify
+- [x] Install the reviewed owner-signed release, restore/restart only the saved ARCP service configuration if required, and verify
   ordinary MCP, OAuth, bearer admin, Shizuku and protected-package denial regressions.
 - [ ] Run controlled listener-recovery acceptance with a local-only, fixed ADB test hook when available; otherwise use
   an equivalent non-production failure harness. A release build must expose no parameterized or remote failure tool.
   Observe `200/401 -> temporary failure -> 200/401` without data loss or manual ARCP restart.
 - [ ] Separately induce a non-destructive process death and record `START_STICKY`/OEM recovery plus bounded
   `ApplicationExitInfo`; do not count it as proof of the in-process watchdog.
-- [ ] Run at least a 15-minute screen-off soak plus a separate forced-idle check with repeated external `/health`
+- [x] Run at least a 15-minute screen-off soak plus a separate forced-idle check with repeated external `/health`
   probes, then one sleep/unlock cycle
   and a normal read-only MCP call. Any unexplained `502` or manual restart fails the [REDACTED_DEVICE_ALIAS] gate.
 - [ ] Disable Wireless/USB debugging and verify known ADB ports are closed before declaring [REDACTED_DEVICE_ALIAS] stable.
 
 ## User Story 5 — [REDACTED_DEVICE_ALIAS] promotion after [REDACTED_DEVICE_ALIAS]
 
-- [ ] Treat [REDACTED_DEVICE_ALIAS] as the regression/stabilization stage. Begin [REDACTED_DEVICE_ALIAS] only after every applicable [REDACTED_DEVICE_ALIAS] item passes and the
+- [x] Treat [REDACTED_DEVICE_ALIAS] as the regression/stabilization stage. Begin [REDACTED_DEVICE_ALIAS] only after every applicable [REDACTED_DEVICE_ALIAS] item passes and the
   artifact digest is frozen; [REDACTED_DEVICE_ALIAS] remains the actual incident acceptance gate.
-- [ ] Reconfirm [REDACTED_DEVICE_ALIAS] baseline, identity, signer, battery exemption and MIUI background/autostart policy.
-- [ ] Deploy the exact [REDACTED_DEVICE_ALIAS]-qualified APK using `adb install -r`, preserving data and the existing ChatGPT trusted
+- [x] Reconfirm [REDACTED_DEVICE_ALIAS] baseline, identity, signer, battery exemption and MIUI background/autostart policy.
+- [x] Deploy the exact [REDACTED_DEVICE_ALIAS]-reviewed APK using `adb install -r`, preserving data and the existing ChatGPT trusted
   OAuth binding.
 - [ ] Repeat controlled recovery with logcat/exit evidence, public endpoint monitoring and no manual server restart.
-- [ ] Run at least a 15-minute locked-screen soak, then verify wake, locally authorized ChatGPT sleep/unlock, ordinary
+- [x] Run at least a 15-minute locked-screen soak, then verify wake, locally authorized sleep/unlock, ordinary
   MCP and bearer-only privileged regressions.
 - [ ] Disable Wireless/USB debugging and externally verify ADB ports are closed. Public `/mcp` must still reject an
   unauthenticated request with `401`.
 
 ## User Story 6 — Documentation and delivery
 
-- [ ] Before either install, record current APK digest, signer digest and a known-good rollback APK. If a gate fails,
+- [x] Before either install, record current APK digest, signer digest and a known-good rollback APK. If a gate fails,
   reinstall the matching signed rollback with `adb install -r` and preserve data; never uninstall/reset as rollback.
-- [ ] Record the recovered incident, thresholds, lifecycle evidence, [REDACTED_DEVICE_ALIAS]-first promotion results and residual Android
+- [x] Record the recovered incident, thresholds, lifecycle evidence, [REDACTED_DEVICE_ALIAS]-first promotion results and residual Android
   scheduling limits in root and per-device documentation.
-- [ ] Preserve all pre-existing dirty worktree changes; stage only reviewed Plan 71 paths and explicitly reconciled
+- [x] Preserve all pre-existing dirty worktree changes; stage only reviewed Plan 71 paths and explicitly reconciled
   acceptance-document overlaps.
-- [ ] Audit Git-tracked files, staged diff, logs and generated reports for secrets. `.env.secrets`, PINs, bearer/tunnel
+- [x] Audit Git-tracked files, staged diff, logs and generated reports for secrets. `.env.secrets`, PINs, bearer/tunnel
   tokens, signing material and raw OAuth client IDs must remain untracked and absent from output artifacts.
-- [ ] Commit plan/review, implementation/tests and live acceptance evidence separately. Push only after [REDACTED_DEVICE_ALIAS] passes and
+- [x] Commit plan/review, implementation/tests and live acceptance evidence separately. Push only after [REDACTED_DEVICE_ALIAS] passes and
   confirm local `main` equals `origin/main`.
+
+## Live rollout record — 30 August 2026
+
+The owner-signed `gmsRelease` artifact `1.12.0-dev.82+f7ff992` (`versionCode 20010151`) had APK SHA-256
+`[REDACTED_RESOURCE_ID]` and signer SHA-256
+`[REDACTED_RESOURCE_ID]`. The installed predecessor was pulled from
+each device before `adb install -r`; both predecessors had APK SHA-256
+`[REDACTED_RESOURCE_ID]` and the same signer.
+
+[REDACTED_DEVICE_ALIAS] passed identity/signer preflight, ordinary/OAuth/bearer/Shizuku/protected-package regressions and 30 consecutive
+screen-off/deep-Doze samples over 15 minutes with `/health=200`, OIDC `=200`, and unauthenticated `/mcp=401`. [REDACTED_DEVICE_ALIAS]
+then received the exact same APK and passed the same 30-sample soak. An authenticated MCP call also succeeded during
+[REDACTED_DEVICE_ALIAS] deep Doze. The first post-Doze unlock met a cold Shizuku binder timeout; the bounded retry succeeded and the
+local `trusted` state remained active.
+
+MIUI did not resume the MCP foreground service after package replacement, so one local `Start` action was required;
+the saved configuration and OAuth binding were retained. No DNS, tunnel, tool schema, Codex server definition or
+ChatGPT plugin mutation was required. On both phones, disabling both ADB modes terminated the non-root Shizuku server.
+The final least-privilege state therefore keeps locally required USB debugging enabled, disables Wireless debugging,
+closes the observed wireless ADB ports, and leaves LAN port `8080` closed. Shizuku admin calls passed after this
+cleanup.
+
+The release intentionally contains no failure-injection hook. Deterministic dead-listener recovery is covered by the
+focused supervisor/integration tests, but a live in-process listener failure and a separate safe process-death test
+remain unchecked above. The build is owner-signed and reviewed, but not labeled `qualified=true`, because the global
+detekt task still reports 149 pre-existing findings outside the fork-owned recovery paths. These boundaries must not
+be rewritten as completed live evidence.
 
 ## Acceptance criteria
 

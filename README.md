@@ -415,6 +415,15 @@ mode; no upstream UI class or navigation route is modified.
 They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
 activation and the first ordinary device unlock after a reboot remain manual administrator gates.
 
+Fork releases also install a private `com.mwodevelop.androidremotecontrolmcp.recovery` extension through a
+non-exported manifest provider. Without modifying upstream service classes, it probes the real loopback `/health`
+only while the Cloudflare tunnel reports connected, requires three consecutive failures, and shares a persistent
+two-restarts-per-ten-minutes circuit breaker with bounded exit diagnostics. It never exposes a restart or failure
+injection MCP tool and never revives an explicit user stop. The [REDACTED_DEVICE_ALIAS]-first rollout of `1.12.0-dev.82+f7ff992`, followed
+by the identical APK on [REDACTED_DEVICE_ALIAS], completed 15-minute screen-off/Doze endpoint soaks with 30/30 successful
+`200/200/401` samples on each device. Device-specific exceptions and rollback evidence are recorded in the two
+`myconf/*/README.md` runbooks.
+
 The isolated [REDACTED_DEVICE_ALIAS] debug POC on loopback port `8081` is historical/test tooling and is not a rollout tier. Its package
 and ADB forward were removed after the owner-signed production acceptance on 2026-08-27. For a future local-only
 regression proof:
