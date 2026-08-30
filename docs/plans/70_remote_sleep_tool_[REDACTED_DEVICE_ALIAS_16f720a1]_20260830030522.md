@@ -43,46 +43,46 @@ shell/input tool, remote Shizuku bootstrap, PIN changes, data reset, app uninsta
 
 ## User Story 1 — Narrow sleep capability
 
-- [ ] Add `sleepDevice()` to the application-owned `PrivilegedAdminBackend` boundary.
-- [ ] Implement it as fixed `input keyevent KEYCODE_SLEEP` with bounded output and timeout.
-- [ ] Reject unready Shizuku, permission denial, truncation and non-zero exit through the stable exception taxonomy.
-- [ ] Add backend tests proving the exact command/argument vector and rejection paths.
+- [x] Add `sleepDevice()` to the application-owned `PrivilegedAdminBackend` boundary.
+- [x] Implement it as fixed `input keyevent KEYCODE_SLEEP` with bounded output and timeout.
+- [x] Reject unready Shizuku, permission denial, truncation and non-zero exit through the stable exception taxonomy.
+- [x] Add backend tests proving the exact command/argument vector and rejection paths.
 
 ## User Story 2 — MCP exposure and authorization
 
-- [ ] Register zero-argument `admin_sleep_device` through `registerShizukuAdminTools`.
-- [ ] Authorize the administrator bearer and only the exact locally authorized OAuth client used by remote unlock.
-- [ ] Add handler tests for bearer success, exact OAuth success, wrong OAuth denial and backend failure mapping.
-- [ ] Update the closed production tool-surface test and prove no shell/settings/clear primitive appears.
-- [ ] Preserve per-tool `disabledTools` behavior and existing audit logging.
+- [x] Register zero-argument `admin_sleep_device` through `registerShizukuAdminTools`.
+- [x] Authorize the administrator bearer and only the exact locally authorized OAuth client used by remote unlock.
+- [x] Add handler tests for bearer success, exact OAuth success, wrong OAuth denial and backend failure mapping.
+- [x] Update the closed production tool-surface test and prove no shell/settings/clear primitive appears.
+- [x] Preserve per-tool `disabledTools` behavior and existing audit logging.
 
 ## User Story 3 — Build and [REDACTED_DEVICE_ALIAS] deployment
 
-- [ ] Run formatting, static analysis, module/unit tests, merged-manifest validation and the qualified owner-signed
+- [x] Run formatting, static analysis, module/unit tests, merged-manifest validation and the qualified owner-signed
   `gmsRelease` build with bounded Gradle workers.
-- [ ] Confirm the artifact package, version, signer and qualified deployment manifest.
-- [ ] Enable Wireless debugging only after the build is qualified and the user completes Android's manual gate.
-- [ ] Verify explicit [REDACTED_DEVICE_ALIAS] identity and deploy with `adb install -r`, preserving application data.
-- [ ] Restore/restart the saved [REDACTED_DEVICE_ALIAS] configuration and verify the Cloudflare endpoint.
-- [ ] Disable Wireless and USB debugging before E2E; externally verify that known ADB ports are closed.
+- [x] Confirm the artifact package, version, signer and qualified deployment manifest.
+- [x] Enable Wireless debugging only after the build is qualified and the user completes Android's manual gate.
+- [x] Verify explicit [REDACTED_DEVICE_ALIAS] identity and deploy with `adb install -r`, preserving application data.
+- [x] Restore/restart the saved [REDACTED_DEVICE_ALIAS] configuration and verify the Cloudflare endpoint.
+- [x] Disable Wireless and USB debugging before E2E; externally verify that known ADB ports are closed.
 
 ## User Story 4 — ChatGPT/CDP E2E and regression
 
-- [ ] Through the already authenticated browser on CDP `127.0.0.1:9222`, refresh the [REDACTED_DEVICE_ALIAS] ChatGPT connector so the
+- [x] Through the already authenticated browser on CDP `127.0.0.1:9222`, refresh the [REDACTED_DEVICE_ALIAS] ChatGPT connector so the
   scanned schema contains `android_admin_sleep_device` and the pre-existing admin tools.
-- [ ] In a ChatGPT conversation invoke the sleep tool and verify that [REDACTED_DEVICE_ALIAS] becomes non-interactive/locked.
-- [ ] Invoke `android_admin_unlock_device` through the same exact OAuth client and verify `status=unlocked` plus the
+- [x] In a ChatGPT conversation invoke the sleep tool and verify that [REDACTED_DEVICE_ALIAS] becomes non-interactive/locked.
+- [x] Invoke `android_admin_unlock_device` through the same exact OAuth client and verify `status=unlocked` plus the
   expected foreground state after wake.
-- [ ] Repeat one complete sleep/unlock cycle to cover trusted-mode reuse and spacing rules.
-- [ ] Run bearer regressions for `tools/list`, ordinary Accessibility, Shizuku top-window and protected uninstall
+- [x] Repeat one complete sleep/unlock cycle to cover trusted-mode reuse and spacing rules.
+- [x] Run bearer regressions for `tools/list`, ordinary Accessibility, Shizuku top-window and protected uninstall
   rejection; confirm the public endpoint still rejects unauthenticated requests.
-- [ ] Confirm no crash, ANR, tunnel loss or Shizuku loss during the acceptance window.
+- [x] Confirm no crash, ANR, tunnel loss or Shizuku loss during the acceptance window.
 
 ## User Story 5 — Documentation and delivery
 
-- [ ] Update the root and [REDACTED_DEVICE_ALIAS] documentation, recorded tool count/version and deployment acceptance evidence.
-- [ ] Audit tracked paths and the pending diff for secrets; confirm `.env.secrets` stays ignored with mode `0600`.
-- [ ] Commit the plan separately, commit implementation/tests, then commit live acceptance documentation.
+- [x] Update the root and [REDACTED_DEVICE_ALIAS] documentation, recorded tool count/version and deployment acceptance evidence.
+- [x] Audit tracked paths and the pending diff for secrets; confirm `.env.secrets` stays ignored with mode `0600`.
+- [x] Commit the plan separately, commit implementation/tests, then commit live acceptance documentation.
 - [ ] Push only after all automated and [REDACTED_DEVICE_ALIAS] E2E gates pass; confirm local `main` equals `origin/main`.
 
 ## Acceptance criteria
