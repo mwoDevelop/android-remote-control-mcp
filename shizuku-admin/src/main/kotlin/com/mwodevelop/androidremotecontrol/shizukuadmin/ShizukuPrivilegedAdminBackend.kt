@@ -2,6 +2,7 @@ package com.mwodevelop.androidremotecontrol.shizukuadmin
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.view.KeyEvent
 import rikka.shizuku.Shizuku
 
 internal const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
@@ -112,6 +113,13 @@ internal class ShizukuPrivilegedAdminBackend(
         return ApplicationUninstallResult(packageName = packageName, androidUserId = ANDROID_USER_ID)
     }
 
+    override suspend fun sleepDevice() {
+        requireReady()
+        val result = executeInputCommand(listOf("keyevent", KeyEvent.KEYCODE_SLEEP.toString()))
+        rejectTruncatedResult(result)
+        rejectNonZeroResult(result)
+    }
+
     override suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean {
         requireReady()
         val localCopy = digits.copyOf()
@@ -148,6 +156,15 @@ internal class ShizukuPrivilegedAdminBackend(
     private suspend fun executePackageManagerCommand(args: List<String>): CommandResult =
         try {
             commandExecutor.execute("pm", args, PACKAGE_OPERATION_LIMITS)
+        } catch (e: PrivilegedAdminException) {
+            throw e
+        } catch (_: Exception) {
+            throw PrivilegedAdminException.ExecutionFailed()
+        }
+
+    private suspend fun executeInputCommand(args: List<String>): CommandResult =
+        try {
+            commandExecutor.execute("input", args, INPUT_OPERATION_LIMITS)
         } catch (e: PrivilegedAdminException) {
             throw e
         } catch (_: Exception) {
@@ -195,6 +212,12 @@ internal class ShizukuPrivilegedAdminBackend(
                 timeoutMs = 30_000L,
                 maxStdoutBytes = 64 * 1024,
                 maxStderrBytes = 64 * 1024,
+            )
+        val INPUT_OPERATION_LIMITS =
+            CommandLimits(
+                timeoutMs = 10_000L,
+                maxStdoutBytes = 8 * 1024,
+                maxStderrBytes = 8 * 1024,
             )
         const val ANDROID_USER_ID = 0
         const val PACKAGE_MANAGER_SUCCESS = "Success"

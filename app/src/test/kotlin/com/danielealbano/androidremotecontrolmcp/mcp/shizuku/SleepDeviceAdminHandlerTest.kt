@@ -16,28 +16,31 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
-class GetTopWindowAdminHandlerTest {
+class SleepDeviceAdminHandlerTest {
     @Test
-    fun `administrator bearer receives typed top window result`() =
+    fun `administrator bearer requests fixed sleep action`() =
         runTest {
             val backend = FakeBackend()
-            val result = withClient(McpAuthClientClass.STATIC_BEARER) { handler(backend).execute() }
-            val text = (result.content.single() as TextContent).text
 
-            assertTrue(text.contains("\"package_name\":\"com.example.app\""))
-            assertTrue(text.contains("\"display_id\":0"))
-            assertEquals(1, backend.callCount)
+            val result = withClient(McpAuthClientClass.STATIC_BEARER) { handler(backend).execute() }
+
+            assertTrue((result.content.single() as TextContent).text.contains("\"status\":\"sleep_requested\""))
+            assertEquals(1, backend.sleepCalls)
         }
 
     @Test
-    fun `oauth is denied before the backend is invoked`() =
+    fun `only exact locally authorized OAuth client may sleep device`() =
         runTest {
-            val backend = FakeBackend()
+            val accepted = FakeBackend()
+            val denied = FakeBackend()
 
+            withClient(McpAuthClientClass.OAUTH, CLIENT_A) { handler(accepted).execute() }
             assertThrows<McpToolException.PermissionDenied> {
-                withClient(McpAuthClientClass.OAUTH) { handler(backend).execute() }
+                withClient(McpAuthClientClass.OAUTH, CLIENT_B) { handler(denied).execute() }
             }
-            assertEquals(0, backend.callCount)
+
+            assertEquals(1, accepted.sleepCalls)
+            assertEquals(0, denied.sleepCalls)
         }
 
     @Test
@@ -49,36 +52,47 @@ class GetTopWindowAdminHandlerTest {
                 assertThrows<McpToolException.ActionFailed> {
                     withClient(McpAuthClientClass.STATIC_BEARER) { handler(backend).execute() }
                 }
+
             assertEquals(
                 "Shizuku is unavailable. Start Shizuku and grant this application permission, then retry.",
                 error.message,
             )
         }
 
-    private fun handler(backend: PrivilegedAdminBackend) = GetTopWindowAdminHandler(backend, PrivilegedToolAuthorizer())
+    private fun handler(backend: PrivilegedAdminBackend) =
+        SleepDeviceAdminHandler(
+            backend = backend,
+            authorizer = PrivilegedToolAuthorizer(),
+            authorizedOAuthClientId = { CLIENT_A },
+        )
 
     private suspend fun <T> withClient(
         clientClass: McpAuthClientClass,
+        clientId: String? = null,
         block: suspend () -> T,
-    ): T = withContext(McpAuthClientClassElement(clientClass)) { block() }
+    ): T = withContext(McpAuthClientClassElement(clientClass, clientId)) { block() }
 
     private class FakeBackend(
         private val failure: PrivilegedAdminException? = null,
     ) : PrivilegedAdminBackend {
-        var callCount = 0
+        var sleepCalls = 0
 
         override fun readiness(): PrivilegedAdminReadiness = PrivilegedAdminReadiness.Ready
 
         override fun requestPermission() = Unit
 
-        override suspend fun getTopWindow(): TopWindowInfo {
-            callCount += 1
-            failure?.let { throw it }
-            return TopWindowInfo("com.example.app", "com.example.app.MainActivity", null, 0)
-        }
+        override suspend fun getTopWindow(): TopWindowInfo = error("not used")
 
         override suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult = error("not used")
 
-        override suspend fun sleepDevice() = error("not used")
+        override suspend fun sleepDevice() {
+            sleepCalls += 1
+            failure?.let { throw it }
+        }
+    }
+
+    private companion object {
+        const val CLIENT_A = "arc-00000000-0000-0000-0000-000000000001"
+        const val CLIENT_B = "arc-00000000-0000-0000-0000-000000000002"
     }
 }

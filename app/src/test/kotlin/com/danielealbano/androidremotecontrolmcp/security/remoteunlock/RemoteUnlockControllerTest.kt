@@ -155,6 +155,8 @@ class RemoteUnlockControllerTest {
 
         override suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult = error("not used")
 
+        override suspend fun sleepDevice() = error("not used")
+
         override suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean {
             injectCalls += 1
             receivedDigits = digits.copyOf()

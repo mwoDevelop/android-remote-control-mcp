@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test
 
 class ShizukuAdminToolsRegistrationTest {
     @Test
-    fun `production privileged surface contains exactly the three reviewed tools`() {
+    fun `production privileged surface contains exactly the reviewed tools`() {
         val server = server()
 
         register(server, SHIZUKU_ADMIN_TOOL_NAMES)
@@ -74,6 +74,8 @@ class ShizukuAdminToolsRegistrationTest {
 
         override suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult =
             ApplicationUninstallResult(packageName, 0)
+
+        override suspend fun sleepDevice() = Unit
     }
 
     private object FakeCredentialStore : RemoteUnlockCredentialStore {

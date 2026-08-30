@@ -65,12 +65,13 @@ The application is a **service-based Android app** that exposes an MCP server ov
 - **Module**: `:shizuku-admin`, depending only on the exact official Shizuku API/provider and coroutines.
 - **Network boundary**: It opens no server or listening socket. The existing `McpServerService` remains the only MCP
   transport and production devices bind it to `127.0.0.1:8080` behind their existing tunnels.
-- **Authorization boundary**: The transport propagates a non-secret request-scoped client class. Privileged handlers
-  accept only the configured primary bearer path; OAuth clients are denied before the backend is invoked.
+- **Authorization boundary**: The transport propagates a non-secret request-scoped client class. Read-only inspection,
+  permission request and uninstall accept only the configured primary bearer. Remote unlock and fixed remote sleep
+  additionally accept only the exact locally authorized OAuth client ID.
 - **Current milestone**: Debug and release builds register exactly bounded `admin_get_top_window`, the standard visible
-  Shizuku permission request and typed user-0 package uninstall. Package uninstall is guarded by an immutable
-  protected-package policy and requires Package Manager's explicit `Success` result. The existing per-tool policy can
-  disable each handler; a dedicated administrator UI is optional and not a release gate for this local deployment.
+  Shizuku permission request, typed user-0 package uninstall, remote unlock and fixed zero-argument sleep. Package
+  uninstall is guarded by an immutable protected-package policy and requires Package Manager's explicit `Success`
+  result. Sleep invokes only `input keyevent KEYCODE_SLEEP`; the existing per-tool policy can disable every handler.
 - **Deliberate exclusions**: No generic shell tool, prefix allowlist, generic settings writer, APK staging, clear-data
   action, root flow, second MCP stack, automated Shizuku start, or Qustodio mutation.
 - **Attribution**: The minimal reflective process-launch and parser approach is adapted from the reviewed Apache-2.0

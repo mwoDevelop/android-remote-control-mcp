@@ -60,7 +60,7 @@ The app runs directly on your Android device (or emulator) and exposes an HTTP s
 - Auto-start on boot
 - Remote access tunnels via Cloudflare Quick Tunnels or ngrok (public HTTPS URL)
 
-### 61 MCP Tools across 15 Categories
+### 62 MCP Tools across 15 Categories
 
 Screen introspection, system actions, touch actions, gestures, node actions, text input, utilities, file operations, app management, camera, intents, notifications, location, and sharing.
 
@@ -83,7 +83,7 @@ See [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) for the full tool reference with inpu
 
 | Feature | This project | [mobile-mcp] | [Android-MCP] | [android-mcp-server] | [adb-mcp] | [droidrun-mcp] |
 |---------|:-:|:-:|:-:|:-:|:-:|:-:|
-| MCP tools | 61 | 21 | 11 | 5 | 10 | 11 |
+| MCP tools | 62 | 21 | 11 | 5 | 10 | 11 |
 | Runs on the phone (no ADB) | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
 | Action latency | 10-100 ms | 1-4 s | 1-4 s | 1-4 s | 1-4 s | 1-4 s |
 | Works over the internet | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
@@ -396,12 +396,14 @@ ignored directory, so no system-wide installation is required (Docker is the fal
 ./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
 ```
 
-Production and debug builds register exactly four reviewed Shizuku tools: `admin_get_top_window`, the standard visible
-`admin_request_shizuku_permission` flow, typed `admin_uninstall_app`, and zero-argument `admin_unlock_device`. The uninstall operation removes a package only
+Production and debug builds register exactly five reviewed Shizuku tools: `admin_get_top_window`, the standard visible
+`admin_request_shizuku_permission` flow, typed `admin_uninstall_app`, zero-argument `admin_unlock_device`, and
+zero-argument `admin_sleep_device`. The uninstall operation removes a package only
 for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators and other critical
 system packages. The first three tools require the administrator bearer and reject OAuth clients such as ChatGPT.
-Remote unlock additionally accepts only the exact OAuth client
-configured locally during encrypted provisioning. The local administrator can select a one-shot arm valid for at
+Remote unlock and sleep additionally accept only the exact OAuth client configured locally during encrypted
+provisioning. Sleep uses one fixed Android sleep key event and exposes neither a generic shell nor caller-controlled
+input. The local administrator can select a one-shot arm valid for at
 most 15 minutes or authenticate once to enable persistent `TRUSTED` mode. Trusted mode permits repeated unlocks until
 it is locally disabled, while enforcing at least 30 seconds between attempts and blocking after three failures in a
 boot-bound ten-minute window.

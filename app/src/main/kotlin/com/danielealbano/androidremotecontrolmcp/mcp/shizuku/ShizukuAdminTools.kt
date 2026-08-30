@@ -209,6 +209,57 @@ class UnlockDeviceAdminHandler(
     }
 }
 
+/** Zero-argument fixed sleep action authorized for the same reviewed clients as remote unlock. */
+class SleepDeviceAdminHandler(
+    private val backend: PrivilegedAdminBackend,
+    private val authorizer: PrivilegedToolAuthorizer,
+    private val authorizedOAuthClientId: () -> String?,
+) {
+    suspend fun execute(): CallToolResult {
+        authorizer.requireRemoteUnlock(authorizedOAuthClientId())
+        executeBackend()
+        return McpToolUtils.textResult(
+            buildJsonObject { put("status", "sleep_requested") }.toString(),
+        )
+    }
+
+    fun register(
+        registrar: LoggedToolRegistrar,
+        toolNamePrefix: String,
+    ) {
+        registrar.addPrivilegedTool(
+            toolName = TOOL_NAME,
+            name = "$toolNamePrefix$TOOL_NAME",
+            description =
+                "Puts this device to sleep using one fixed Android sleep action. Takes no input and exposes no " +
+                    "generic shell or key-event primitive. Requires the administrator bearer or the exact locally " +
+                    "authorized OAuth client used for remote unlock.",
+            inputSchema = ToolSchema(properties = buildJsonObject {}, required = emptyList()),
+        ) { _ -> execute() }
+    }
+
+    @Suppress("ThrowsCount")
+    private suspend fun executeBackend() {
+        try {
+            backend.sleepDevice()
+        } catch (e: PrivilegedAdminException.PermissionDenied) {
+            throw McpToolException.PermissionDenied(SHIZUKU_RECOVERY_HINT, e)
+        } catch (e: PrivilegedAdminException.Unavailable) {
+            throw McpToolException.ActionFailed(SHIZUKU_RECOVERY_HINT, e)
+        } catch (e: PrivilegedAdminException.CommandFailed) {
+            throw McpToolException.ActionFailed("Android rejected the sleep request", e)
+        } catch (e: PrivilegedAdminException.OutputTruncated) {
+            throw McpToolException.ActionFailed("The sleep response exceeded its safety limit", e)
+        } catch (e: PrivilegedAdminException.ExecutionFailed) {
+            throw McpToolException.ActionFailed("The device could not be put to sleep", e)
+        }
+    }
+
+    companion object {
+        const val TOOL_NAME = "admin_sleep_device"
+    }
+}
+
 private fun TopWindowInfo.toJson() =
     buildJsonObject {
         packageName?.let { put("package_name", it) }
@@ -235,6 +286,7 @@ internal val SHIZUKU_ADMIN_TOOL_NAMES =
         RequestShizukuPermissionAdminHandler.TOOL_NAME,
         UninstallApplicationAdminHandler.TOOL_NAME,
         UnlockDeviceAdminHandler.TOOL_NAME,
+        SleepDeviceAdminHandler.TOOL_NAME,
     )
 
 /** One conflict-minimizing seam used by the existing MCP server. */
@@ -265,5 +317,12 @@ fun registerShizukuAdminTools(
             registrar,
             toolNamePrefix,
         )
+    }
+    if (SleepDeviceAdminHandler.TOOL_NAME in enabledTools) {
+        SleepDeviceAdminHandler(
+            backend = backend,
+            authorizer = authorizer,
+            authorizedOAuthClientId = { remoteUnlockCredentialStore.status().authorizedClientId },
+        ).register(registrar, toolNamePrefix)
     }
 }

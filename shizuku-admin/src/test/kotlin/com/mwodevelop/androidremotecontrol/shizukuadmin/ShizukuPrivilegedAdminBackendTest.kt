@@ -164,6 +164,50 @@ class ShizukuPrivilegedAdminBackendTest {
         }
 
     @Test
+    fun `sleep uses one fixed Android sleep key event`() =
+        runTest {
+            var capturedCommand = ""
+            var capturedArgs = emptyList<String>()
+            val target =
+                backend(
+                    probe(),
+                    PrivilegedCommandExecutor { command, args, limits ->
+                        capturedCommand = command
+                        capturedArgs = args
+                        assertEquals(10_000L, limits.timeoutMs)
+                        assertEquals(8 * 1024, limits.maxStdoutBytes)
+                        commandResult()
+                    },
+                )
+
+            target.sleepDevice()
+
+            assertEquals("input", capturedCommand)
+            assertEquals(listOf("keyevent", "223"), capturedArgs)
+        }
+
+    @Test
+    fun `sleep rejects command failure and truncated output`() =
+        runTest {
+            val commandFailure =
+                backend(
+                    probe(),
+                    PrivilegedCommandExecutor { _, _, _ -> commandResult(exitCode = 7) },
+                )
+            val truncated =
+                backend(
+                    probe(),
+                    PrivilegedCommandExecutor { _, _, _ -> commandResult(stdoutTruncated = true) },
+                )
+
+            val commandError = runCatching { commandFailure.sleepDevice() }.exceptionOrNull()
+            val truncatedError = runCatching { truncated.sleepDevice() }.exceptionOrNull()
+
+            assertInstanceOf(PrivilegedAdminException.CommandFailed::class.java, commandError)
+            assertInstanceOf(PrivilegedAdminException.OutputTruncated::class.java, truncatedError)
+        }
+
+    @Test
     fun `local feasibility input consumes buffers and does not use command executor`() =
         runTest {
             var commandExecuted = false
