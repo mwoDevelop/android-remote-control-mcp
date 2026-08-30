@@ -60,6 +60,9 @@ interface PrivilegedAdminBackend {
     /** Removes [packageName] for Android user 0; a system-partition APK is not deleted. */
     suspend fun uninstallApplication(packageName: String): ApplicationUninstallResult
 
+    /** Puts the device to sleep using one fixed Android key event; no caller-controlled input is accepted. */
+    suspend fun sleepDevice()
+
     /** Local-only feasibility seam. It is not registered as an MCP tool and consumes [digits]. */
     @Suppress("MaxLineLength")
     suspend fun injectUnlockDigitsForLocalFeasibilityTest(digits: ByteArray): Boolean = throw PrivilegedAdminException.Unavailable()

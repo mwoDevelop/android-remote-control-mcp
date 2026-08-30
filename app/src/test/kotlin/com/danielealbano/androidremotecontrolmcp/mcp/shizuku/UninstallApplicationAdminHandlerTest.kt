@@ -125,5 +125,7 @@ class UninstallApplicationAdminHandlerTest {
             packages += packageName
             return ApplicationUninstallResult(packageName, 0)
         }
+
+        override suspend fun sleepDevice() = error("not used")
     }
 }

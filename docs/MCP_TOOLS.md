@@ -194,7 +194,26 @@ and shell/ADB callers cannot enable trusted mode; ADB remains only the setup/rec
 Stable result statuses are `unlocked`, `already_unlocked`, `disabled`, `not_configured`, `temporarily_blocked`,
 `unavailable`, and `unlock_failed_rearm_required`. In one-shot mode a failed attempt latches the operation until a
 local rearm; in trusted mode the same legacy bounded failure result is followed by the trusted cooldown/rate limiter,
-without consuming trusted authorization. Other Shizuku administrator tools remain bearer-only.
+without consuming trusted authorization. Top-window inspection, Shizuku permission request and uninstall remain
+bearer-only.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "required": []
+}
+```
+
+### `admin_sleep_device`
+
+Puts Android to sleep using one fixed `KEYCODE_SLEEP` action through Shizuku. The input schema is empty and the caller
+cannot supply a command, key code or generic input event. The administrator bearer is accepted; OAuth is accepted only
+for the same exact locally configured client ID as remote unlock. Sleeping neither reads nor consumes the PIN and does
+not consume an unlock attempt or bypass its cooldown/failure policy.
+
+The stable success response is `{"status":"sleep_requested"}`. Shizuku readiness, permission, timeout, bounded-output
+and command failures use the same stable privileged-tool error mapping as the other administrator tools.
 
 ```json
 {
