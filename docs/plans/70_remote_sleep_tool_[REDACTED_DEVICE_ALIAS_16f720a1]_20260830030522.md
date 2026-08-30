@@ -83,7 +83,7 @@ shell/input tool, remote Shizuku bootstrap, PIN changes, data reset, app uninsta
 - [x] Update the root and [REDACTED_DEVICE_ALIAS] documentation, recorded tool count/version and deployment acceptance evidence.
 - [x] Audit tracked paths and the pending diff for secrets; confirm `.env.secrets` stays ignored with mode `0600`.
 - [x] Commit the plan separately, commit implementation/tests, then commit live acceptance documentation.
-- [ ] Push only after all automated and [REDACTED_DEVICE_ALIAS] E2E gates pass; confirm local `main` equals `origin/main`.
+- [x] Push only after all automated and [REDACTED_DEVICE_ALIAS] E2E gates pass; confirm local `main` equals `origin/main`.
 
 ## Acceptance criteria
 
