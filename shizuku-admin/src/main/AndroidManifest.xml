@@ -9,6 +9,7 @@
             android:exported="true"
             android:label="@string/remote_unlock_admin_launcher"
             android:launchMode="singleTop"
+            android:taskAffinity="${applicationId}.remote_unlock_admin"
             android:theme="@style/Theme.ARCP.RemoteUnlockAdmin">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
