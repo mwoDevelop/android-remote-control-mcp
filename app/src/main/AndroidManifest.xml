@@ -156,6 +156,13 @@
             android:exported="true"
             android:permission="android.permission.DUMP" />
 
+        <!-- Fork-owned OCP extension: observes the MCP origin without modifying upstream service classes. -->
+        <provider
+            android:name="com.mwodevelop.androidremotecontrolmcp.recovery.McpOriginRecoveryProvider"
+            android:authorities="${applicationId}.mcp-origin-recovery"
+            android:exported="false"
+            android:initOrder="100" />
+
         <!-- Event Channel Service -->
         <service
             android:name=".services.channel.EventChannelService"
