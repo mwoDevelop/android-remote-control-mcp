@@ -492,8 +492,9 @@ androidComponents {
 tasks.withType<Test> {
     useJUnitPlatform()
     maxHeapSize = "3g"
-    // Distribute tests across all available CPU cores for faster execution.
-    maxParallelForks = (Runtime.getRuntime().availableProcessors()).coerceAtLeast(1)
+    // GMS and FOSS test tasks may run concurrently. Capping each task prevents large hosts from
+    // spawning dozens of 3 GiB workers and causing coroutine tests to time out under CPU pressure.
+    maxParallelForks = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
     // MockK uses byte-buddy/reflection internally; JDK 17 strong encapsulation
     // blocks access to these packages from unnamed modules, causing test failures.
     jvmArgs(
