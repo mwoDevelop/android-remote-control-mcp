@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Unlock credentials are consumed only by the dedicated provisioning scripts and must never
+# reach Git, build, network, ADB, or deployment child processes through an inherited environment.
+unset [REDACTED_DEVICE_ALIAS]_PIN [REDACTED_DEVICE_ALIAS]_PIN
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${ARCP_REPO_ROOT_OVERRIDE:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)}"
 PACKAGE_ID="com.danielealbano.androidremotecontrolmcp"
@@ -555,6 +559,18 @@ validate_admin_ui_manifest() {
   node "$REPO_ROOT/scripts/verify-admin-ui-manifest.mjs" "$analyzer" "$apk"
 }
 
+certificate_digest() {
+  local signer="$1" apk="$2" output digest
+  output="$("$signer" verify --print-certs "$apk")" || return 1
+  digest="$({
+    sed -n -E \
+      's/^(Signer #[0-9]+|V[0-9]+ Signer:)[[:space:]]*certificate SHA-256 digest: //p' \
+      <<<"$output"
+  } | head -1)"
+  [[ -n "$digest" ]] || return 1
+  printf '%s' "$digest"
+}
+
 apk_metadata() {
   local apk="$1" analyzer signer app_id version_code version_name digest
   analyzer="$(resolve_android_tool apkanalyzer)"
@@ -562,15 +578,21 @@ apk_metadata() {
   app_id="$($analyzer manifest application-id "$apk")"
   version_code="$($analyzer manifest version-code "$apk")"
   version_name="$($analyzer manifest version-name "$apk")"
-  digest="$($signer verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-  [[ -n "$digest" ]] || die "APK is unsigned or its signing digest cannot be read"
+  if [[ -z "$app_id" || ! "$version_code" =~ ^[0-9]+$ || -z "$version_name" ]]; then
+    printf 'ERROR: APK package or version metadata cannot be read\n' >&2
+    return 1
+  fi
+  if ! digest="$(certificate_digest "$signer" "$apk")"; then
+    printf 'ERROR: APK is unsigned or its signing digest cannot be read\n' >&2
+    return 1
+  fi
   printf '%s\t%s\t%s\t%s\n' "$app_id" "$version_code" "$version_name" "$digest"
 }
 
 write_build_manifest() {
   local apk="$1" qualified="$2" sha metadata manifest_dir manifest
   sha="$(sha256sum "$apk" | awk '{print $1}')"
-  metadata="$(apk_metadata "$apk")"
+  metadata="$(apk_metadata "$apk")" || return 1
   manifest_dir="$REPO_ROOT/build/deployments"
   mkdir -p "$manifest_dir"
   manifest="$manifest_dir/build-${VARIANT}-${sha}.json"
@@ -607,7 +629,8 @@ build_variant() {
   validate_tunnel_payload "${apks[0]}"
   validate_admin_ui_manifest "${apks[0]}"
   local manifest
-  manifest="$(write_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")"
+  manifest="$(write_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")" ||
+    die "Failed to create a qualified build manifest"
   printf 'Build complete: %s\nManifest: %s\n' "${apks[0]}" "$manifest"
   [[ "$SKIP_E2E" == false ]] || printf 'UNQUALIFIED: mandatory E2E compile gate was skipped; deployment will refuse this artifact.\n' >&2
   BUILT_ARTIFACT="$(realpath "${apks[0]}")"
@@ -639,7 +662,7 @@ installed_certificate() {
   local_apk="$temp_dir/installed-base.apk"
   trap '[[ -n "${temp_dir:-}" && -d "$temp_dir" ]] && rm -rf -- "$temp_dir"' RETURN
   adb_target pull "$remote_path" "$local_apk" >/dev/null
-  digest="$($signer verify --print-certs "$local_apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+  digest="$(certificate_digest "$signer" "$local_apk")" || return 1
   [[ -n "$digest" ]] || die "Cannot read installed APK signing certificate"
   printf '%s' "$digest"
 }
@@ -650,7 +673,7 @@ preflight_artifact_and_device() {
   [[ "$ARTIFACT" == /* ]] || ARTIFACT="$(realpath "$ARTIFACT")"
   validate_qualified_artifact
   check_device
-  metadata="$(apk_metadata "$ARTIFACT")"
+  metadata="$(apk_metadata "$ARTIFACT")" || die "Cannot read candidate APK metadata"
   IFS=$'\t' read -r candidate_package candidate_code _ candidate_cert <<<"$metadata"
   expected_package="$(json_value "$(device_config)" application.package_id)"
   [[ "$candidate_package" == "$expected_package" ]] || die "APK application ID mismatch (debug POC uses a separate helper)"

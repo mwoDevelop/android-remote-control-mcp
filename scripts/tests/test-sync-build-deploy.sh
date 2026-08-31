@@ -283,8 +283,8 @@ test_ambiguous_adb() {
   fake_bin="$(mktemp -d "$WORK_ROOT/bin.XXXXXX")"
 cat >"$fake_bin/adb" <<'EOF'
 #!/usr/bin/env bash
-if [[ -n "${[REDACTED_DEVICE_ALIAS]_PIN:-}" ]]; then
-  printf '[REDACTED_DEVICE_ALIAS]_PIN leaked to adb child\n' >&2
+if [[ -n "${[REDACTED_DEVICE_ALIAS]_PIN:-}" || -n "${[REDACTED_DEVICE_ALIAS]_PIN:-}" ]]; then
+  printf 'unlock PIN leaked to adb child\n' >&2
   exit 77
 fi
 if [[ "${1:-}" == "devices" ]]; then
@@ -298,7 +298,8 @@ EOF
   printf 'ANDROID_MCP_BEARER_TOKEN=test\nCLOUDFLARE_TUNNEL_TOKEN=test\nADB_SERIAL=\nexport [REDACTED_DEVICE_ALIAS]_PIN=987654\n' >"$secret"
   chmod 600 "$secret"
   expect_failure "ambiguous ADB selection is rejected" "ADB serial is required because 2" \
-    bash -c "cd '$repo' && PATH='$fake_bin':\"\$PATH\" scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS]"
+    env [REDACTED_DEVICE_ALIAS]_PIN=123456 [REDACTED_DEVICE_ALIAS]_PIN=654321 \
+      bash -c "cd '$repo' && PATH='$fake_bin':\"\$PATH\" scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS]"
 }
 
 test_secret_reader_does_not_execute_or_export_pin() {
@@ -309,6 +310,7 @@ test_secret_reader_does_not_execute_or_export_pin() {
   printf 'ANDROID_MCP_BEARER_TOKEN=admin-token\nCLOUDFLARE_TUNNEL_TOKEN=tunnel-token\nexport [REDACTED_DEVICE_ALIAS]_PIN=$(touch %s)\n' "$marker" >"$secret"
   chmod 600 "$secret"
   (
+    unset [REDACTED_DEVICE_ALIAS]_PIN [REDACTED_DEVICE_ALIAS]_PIN
     eval "$(sed -n '/^read_secret_variable() {/,/^}/p' "$SOURCE_SCRIPT")"
     die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
     value="$(read_secret_variable "$secret" ANDROID_MCP_BEARER_TOKEN)"
@@ -401,6 +403,40 @@ test_tunnel_payload_gate() {
   pass "qualified builds require Cloudflare and ngrok payloads for both supported ABIs"
 }
 
+test_apksigner_digest_compatibility() {
+  local digest output status repo
+  eval "$(sed -n '/^certificate_digest() {/,/^}/p' "$SOURCE_SCRIPT")"
+  fake_apksigner() { printf '%s\n' "$TEST_APKSIGNER_OUTPUT"; }
+
+  TEST_APKSIGNER_OUTPUT='Signer #1 certificate SHA-256 digest: legacy-digest'
+  digest="$(certificate_digest fake_apksigner test.apk)"
+  [[ "$digest" == "legacy-digest" ]]
+
+  TEST_APKSIGNER_OUTPUT='V2 Signer: certificate SHA-256 digest: modern-digest'
+  digest="$(certificate_digest fake_apksigner test.apk)"
+  [[ "$digest" == "modern-digest" ]]
+
+  TEST_APKSIGNER_OUTPUT='DOES NOT VERIFY'
+  set +e
+  output="$(certificate_digest fake_apksigner test.apk 2>&1)"
+  status=$?
+  set -e
+  [[ $status -ne 0 && -z "$output" ]]
+
+  repo="$(new_repo)"
+  eval "$(sed -n '/^write_build_manifest() {/,/^}/p' "$SOURCE_SCRIPT")"
+  apk_metadata() { return 1; }
+  sha256sum() { printf 'deadbeef  %s\n' "$1"; }
+  REPO_ROOT="$repo"
+  VARIANT=gmsRelease
+  set +e
+  output="$(write_build_manifest test.apk true 2>&1)"
+  status=$?
+  set -e
+  [[ $status -ne 0 && -z "$output" ]]
+  pass "APK metadata accepts old and new apksigner output and fails closed"
+}
+
 test_help
 test_channel_arguments
 test_latest_stable_selection
@@ -421,5 +457,6 @@ test_secret_reader_does_not_execute_or_export_pin
 test_ngrok_test_token_resolution
 test_production_listener_safety
 test_tunnel_payload_gate
+test_apksigner_digest_compatibility
 
 printf '1..%d\n' "$PASSED"
