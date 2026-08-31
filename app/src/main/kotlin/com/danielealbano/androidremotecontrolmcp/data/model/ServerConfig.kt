@@ -78,7 +78,7 @@ data class ServerConfig(
         const val DEFAULT_CERTIFICATE_HOSTNAME = "android-mcp.local"
 
         /** Default file size limit in megabytes. */
-        const val DEFAULT_FILE_SIZE_LIMIT_MB = 50
+        const val DEFAULT_FILE_SIZE_LIMIT_MB = 500
 
         /** Minimum file size limit in megabytes. */
         const val MIN_FILE_SIZE_LIMIT_MB = 1

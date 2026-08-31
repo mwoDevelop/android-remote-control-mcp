@@ -314,7 +314,7 @@ The MCP server exposes 57 tools across 14 categories. For full JSON-RPC schemas,
 
 **Virtual path system**: All file tools use virtual paths: `{location_id}/{relative_path}` where `location_id` is `{authority}/{treeDocumentId}`. The location must be added by the user via the UI before file operations can be performed.
 
-**File size limit**: All file operations are subject to the configurable file size limit (default 50 MB, range 1-500 MB). Stored in `ServerConfig.fileSizeLimitMb`.
+**File size limit**: All file operations are subject to the configurable file size limit (default 500 MB, range 1-500 MB). Stored in `ServerConfig.fileSizeLimitMb`.
 
 **Encoding**: All text operations use UTF-8.
 
@@ -726,7 +726,7 @@ MCP tools return data originating from the Android device (UI element text, cont
 - **Tunnel Provider**: Cloudflare (no account required)
 - **ngrok Authtoken**: Empty (required when using ngrok)
 - **ngrok Domain**: Empty (auto-assigned when empty)
-- **File Size Limit**: 50 MB (range 1-500 MB, configurable via UI, applies to all file operations)
+- **File Size Limit**: 500 MB (range 1-500 MB, configurable via UI, applies to all file operations)
 - **Allow HTTP Downloads**: Disabled (must be explicitly enabled to allow non-HTTPS downloads)
 - **Allow Unverified HTTPS Certificates**: Disabled (must be explicitly enabled to accept self-signed/invalid certs for downloads)
 - **Download Timeout**: 60 seconds (range 10-300 seconds, configurable via UI)

@@ -98,6 +98,12 @@ class ServerConfigTest {
         }
 
         @Test
+        fun `default file size limit is 500 MB`() {
+            val config = ServerConfig()
+            assertEquals(500, config.fileSizeLimitMb)
+        }
+
+        @Test
         fun `default toolPermissionsConfig has empty sets`() {
             val config = ServerConfig()
             assertEquals(ToolPermissionsConfig(), config.toolPermissionsConfig)
@@ -149,6 +155,11 @@ class ServerConfigTest {
         @Test
         fun `DEFAULT_CERTIFICATE_HOSTNAME is android-mcp local`() {
             assertEquals("android-mcp.local", ServerConfig.DEFAULT_CERTIFICATE_HOSTNAME)
+        }
+
+        @Test
+        fun `DEFAULT_FILE_SIZE_LIMIT_MB is 500`() {
+            assertEquals(500, ServerConfig.DEFAULT_FILE_SIZE_LIMIT_MB)
         }
 
         @Test
