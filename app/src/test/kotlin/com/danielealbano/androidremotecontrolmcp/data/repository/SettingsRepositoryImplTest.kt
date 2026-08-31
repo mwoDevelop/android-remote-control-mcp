@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import app.cash.turbine.test
 import com.danielealbano.androidremotecontrolmcp.data.model.BindingAddress
@@ -108,7 +109,20 @@ class SettingsRepositoryImplTest {
                 assertEquals(TunnelProviderType.CLOUDFLARE, config.tunnelProvider)
                 assertEquals("", config.ngrokAuthtoken)
                 assertEquals("", config.ngrokDomain)
+                assertEquals(500, config.fileSizeLimitMb)
                 assertEquals("", config.deviceSlug)
+            }
+
+        @Test
+        fun `preserves explicitly stored file size limit`() =
+            testScope.runTest {
+                dataStore.edit { prefs ->
+                    prefs[intPreferencesKey("file_size_limit_mb")] = 50
+                }
+
+                val config = repository.getServerConfig()
+
+                assertEquals(50, config.fileSizeLimitMb)
             }
 
         @Test

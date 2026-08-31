@@ -455,7 +455,7 @@ The device-specific `README.md` files are the operational runbooks. Snapshot sta
 | Device Slug | Empty | Optional device identifier for tool name prefix (e.g., `pixel7` makes tools `android_pixel7_tap`) |
 | Remote Access Tunnel | Disabled | Expose server via public HTTPS URL (Cloudflare Quick Tunnels or ngrok) |
 | Tool Permissions | All enabled | Per-tool and per-parameter enable/disable (Settings > MCP Tools) |
-| File Size Limit | 50 MB | Maximum file size for file operations (range 1-500 MB) |
+| File Size Limit | 500 MB | Maximum file size for file operations (range 1-500 MB) |
 | Allow HTTP Downloads | Disabled | Allow non-HTTPS downloads via `android_download_from_url` |
 | Download Timeout | 60 seconds | Timeout for file downloads (range 10-300 seconds) |
 
@@ -564,7 +564,7 @@ adb shell am broadcast \
   --es cloudflare_tunnel_extra_args "--edge region1.v2.argotunnel.com:7844" \
   --es ngrok_authtoken "your-ngrok-token" \
   --es ngrok_domain "your-domain.ngrok-free.app" \
-  --ei file_size_limit_mb 50 \
+  --ei file_size_limit_mb 500 \
   --ez allow_http_downloads false \
   --ez allow_unverified_https_certs false \
   --ei download_timeout_seconds 60 \
