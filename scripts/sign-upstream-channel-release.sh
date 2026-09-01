@@ -102,7 +102,7 @@ verified_single_signer_digest() {
   grep -Eq '^Verified using v(2|3|3\.1) scheme .*: true$' <<<"$output" ||
     die "Signed APK does not verify with an APK Signature Scheme v2 or newer"
   mapfile -t digests < <(
-    sed -n -E 's/^(Signer #[0-9]+|V[0-9]+ Signer:)[[:space:]]*certificate SHA-256 digest: //p' <<<"$output" |
+    sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' <<<"$output" |
       tr '[:upper:]' '[:lower:]' | tr -d ':' | sort -u
   )
   ((${#digests[@]} == 1)) || die "Signed APK must contain exactly one unique signer certificate"

@@ -48,7 +48,7 @@ verified_single_signer_digest() {
   output="$($APKSIGNER verify --verbose --print-certs "$apk")" || return 1
   grep -Eq '^Verified using v(2|3|3\.1) scheme .*: true$' <<<"$output" || return 1
   mapfile -t digests < <(
-    sed -n -E 's/^(Signer #[0-9]+|V[0-9]+ Signer:)[[:space:]]*certificate SHA-256 digest: //p' <<<"$output" |
+    sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' <<<"$output" |
       tr '[:upper:]' '[:lower:]' | tr -d ':' | sort -u
   )
   ((${#digests[@]} == 1)) || return 1
