@@ -31,7 +31,9 @@ scripts/sync-build-deploy.sh build --latest-edge --variant fossRelease --unsigne
 Only the live `NgrokTunnelIntegrationTest` is not applicable to this secretless upstream profile because it requires a
 real account token. The class is still compiled. Lint, detekt, all remaining unit/integration/privacy tests, E2E test
 compilation, native tunnel payload validation and package/version validation remain active and are recorded in the
-pre-sign manifest.
+pre-sign manifest. A failed secretless Gradle test task is retried exactly once because the official suite contains a
+confirmed server-start race; deterministic failures still fail on the second run, and the retry is recorded per asset
+in provenance.
 
 The trusted post-build job treats the unsigned APK and its manifest as untrusted input. It does not run Gradle, Make or
 any executable from that input. It independently reads APK metadata, checks the native payload, runs `zipalign`, signs

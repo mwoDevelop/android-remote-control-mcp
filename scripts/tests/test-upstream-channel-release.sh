@@ -86,7 +86,8 @@ make_input_bundle() {
         channel,source_label:label,source_sha:sourceSha,variant,
         source_repository:"https://github.com/danielealbano/android-remote-control-mcp",
         qualified:true,mandatory_gates_skipped:false,
-        qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source"},
+        qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source",
+          test_retry_occurred:false},
         signed:false,apk_asset:raw,raw_unsigned_sha256:rawSha,sha256:rawSha,
         application_id:"com.danielealbano.androidremotecontrolmcp",version_code:11200,
         version_name:"1.12.0",certificate_sha256:null},null,2)+"\n");

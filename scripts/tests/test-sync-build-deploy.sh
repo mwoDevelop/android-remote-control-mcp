@@ -131,6 +131,35 @@ test_unsigned_apk_metadata() {
   pass "unsigned APK metadata does not require a signing certificate"
 }
 
+test_secretless_test_retry_is_bounded() {
+  local repo count output status previous_dir
+  repo="$(new_repo)"
+  eval "$(sed -n '/^run_secretless_channel_tests() {/,/^}/p' "$SOURCE_SCRIPT")"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'count_file="${TEST_COUNT_FILE:?}"' \
+    'count=0; [[ ! -f "$count_file" ]] || count="$(<"$count_file")"' \
+    'count=$((count + 1)); printf "%s" "$count" >"$count_file"' \
+    '[[ "${ALWAYS_FAIL:-false}" != true && "$count" -ge 2 ]]' >"$repo/gradlew"
+  chmod +x "$repo/gradlew"
+  previous_dir="$PWD"
+  cd "$repo"
+  TEST_RETRY_OCCURRED=false
+  TEST_COUNT_FILE="$repo/count" run_secretless_channel_tests test.init.gradle
+  [[ "$TEST_RETRY_OCCURRED" == true && "$(<"$repo/count")" == 2 ]]
+  cd "$previous_dir"
+
+  rm "$repo/count"
+  TEST_RETRY_OCCURRED=false
+  set +e
+  output="$(cd "$repo" && TEST_COUNT_FILE="$repo/count" ALWAYS_FAIL=true \
+    run_secretless_channel_tests test.init.gradle 2>&1)"
+  status=$?
+  set -e
+  count="$(<"$repo/count")"
+  [[ $status -ne 0 && "$count" == 2 && "$output" == *'retrying the same secretless task exactly once'* ]]
+  pass "secretless upstream tests retry once and deterministic failures remain fatal"
+}
+
 test_latest_stable_selection() {
   local selected
   eval "$(sed -n '/^latest_stable_tag_from_remote_listing() {/,/^}/p' "$SOURCE_SCRIPT")"
@@ -502,6 +531,7 @@ test_channel_arguments
 test_expected_source_sha_guard
 test_channel_build_secret_boundary
 test_unsigned_apk_metadata
+test_secretless_test_retry_is_bounded
 test_latest_stable_selection
 test_go_toolchain_bootstrap
 test_maven_toolchain_bootstrap

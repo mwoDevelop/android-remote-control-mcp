@@ -27,6 +27,7 @@ LATEST_EDGE=false
 UNSIGNED_RELEASE=false
 EXPECTED_SOURCE_SHA=""
 SKIP_E2E=false
+TEST_RETRY_OCCURRED=false
 COMMAND="${1:-}"
 shift || true
 
@@ -463,7 +464,8 @@ channel_info() {
 build_upstream_channel() (
   local channel label source_sha short_sha channel_temp_dir channel_worktree final_label final_sha
   local source_apk output_dir output_apk output_manifest sha metadata qualified signed output_suffix manifest_type
-  local -a child_args
+  local child_manifest test_retry_occurred=false
+  local -a child_args child_manifests
   channel="$1"
   require_clean_worktree
   [[ "$(git -C "$REPO_ROOT" branch --show-current)" == "main" ]] ||
@@ -527,21 +529,28 @@ build_upstream_channel() (
     metadata="$(apk_metadata "$output_apk")"
   else
     metadata="$(apk_package_metadata "$output_apk")"
+    mapfile -t child_manifests < <(
+      find "$channel_worktree/build/deployments" -maxdepth 1 -type f -name "pre-sign-${VARIANT}-*.json" | sort
+    )
+    ((${#child_manifests[@]} == 1)) || die "Expected exactly one internal pre-sign manifest"
+    child_manifest="${child_manifests[0]}"
+    test_retry_occurred="$(json_value "$child_manifest" qualification.test_retry_occurred)"
   fi
   node -e '
     const fs=require("fs");
-    const [out,type,channel,label,sourceSha,variant,qualified,signed,apk,sha,metadata]=process.argv.slice(1);
+    const [out,type,channel,label,sourceSha,variant,qualified,signed,testRetry,apk,sha,metadata]=process.argv.slice(1);
     const [applicationId,versionCode,versionName,certificateSha256]=metadata.split("\t");
     fs.writeFileSync(out,JSON.stringify({schema_version:2,type,
       created_at:new Date().toISOString(),channel,source_label:label,source_sha:sourceSha,variant,
       source_repository:"https://github.com/danielealbano/android-remote-control-mcp",
       qualified:qualified==="true",mandatory_gates_skipped:qualified!=="true",
-      qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source"},
+      qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source",
+        test_retry_occurred:testRetry==="true"},
       signed:signed==="true",apk_asset:apk,raw_unsigned_sha256:signed==="true"?null:sha,
       sha256:sha,application_id:applicationId,version_code:Number(versionCode),version_name:versionName,
       certificate_sha256:certificateSha256||null},null,2)+"\n");
   ' "$output_manifest" "$manifest_type" "$channel" "$label" "$source_sha" "$VARIANT" "$qualified" \
-    "$signed" "$(basename "$output_apk")" "$sha" "$metadata"
+    "$signed" "$test_retry_occurred" "$(basename "$output_apk")" "$sha" "$metadata"
   printf 'Latest %s build complete: %s (%s)\nAPK: %s\nManifest: %s\n' \
     "$channel" "$label" "$source_sha" "$output_apk" "$output_manifest"
 )
@@ -698,15 +707,17 @@ write_unsigned_build_manifest() {
   mkdir -p "$manifest_dir"
   manifest="$manifest_dir/pre-sign-${VARIANT}-${sha}.json"
   node -e '
-    const fs=require("fs"); const [out,apk,sha,variant,qualified,gitSha,meta]=process.argv.slice(1);
+    const fs=require("fs"); const [out,apk,sha,variant,qualified,gitSha,testRetry,meta]=process.argv.slice(1);
     const [applicationId,versionCode,versionName]=meta.split("\t");
     fs.writeFileSync(out,JSON.stringify({schema_version:2,type:"qualified_unsigned_build",
       created_at:new Date().toISOString(),git_sha:gitSha,variant,qualified:qualified==="true",
       apk_asset:require("path").basename(apk),raw_unsigned_sha256:sha,application_id:applicationId,
       version_code:Number(versionCode),version_name:versionName,certificate_sha256:null,
-      qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source"},
+      qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source",
+        test_retry_occurred:testRetry==="true"},
       mandatory_gates_skipped:qualified!=="true"},null,2)+"\n");
-  ' "$manifest" "$apk" "$sha" "$VARIANT" "$qualified" "$(git -C "$REPO_ROOT" rev-parse HEAD)" "$metadata"
+  ' "$manifest" "$apk" "$sha" "$VARIANT" "$qualified" "$(git -C "$REPO_ROOT" rev-parse HEAD)" \
+    "$TEST_RETRY_OCCURRED" "$metadata"
   printf '%s' "$manifest"
 }
 
@@ -716,6 +727,16 @@ assert_channel_build_secretless() {
     RELEASE_KEY_PASSWORD GH_TOKEN GITHUB_TOKEN; do
     [[ -z "${!variable:-}" ]] || die "Secret-bearing variable is forbidden in an upstream channel build: $variable"
   done
+}
+
+run_secretless_channel_tests() {
+  local init_script="$1"
+  if ./gradlew --init-script "$init_script" :app:test :privacy:test :privacy-benchmark:test; then
+    return
+  fi
+  TEST_RETRY_OCCURRED=true
+  printf 'WARNING: upstream test task failed once; retrying the same secretless task exactly once.\n' >&2
+  ./gradlew --init-script "$init_script" :app:test :privacy:test :privacy-benchmark:test
 }
 
 build_variant() {
@@ -735,7 +756,7 @@ build_variant() {
   if [[ "${ARCP_CHANNEL_BUILD:-false}" == true ]]; then
     assert_channel_build_secretless
     gradle_init_args=(--init-script "$SCRIPT_DIR/gradle/upstream-mirror-secretless.init.gradle")
-    ./gradlew "${gradle_init_args[@]}" :app:test :privacy:test :privacy-benchmark:test
+    run_secretless_channel_tests "${gradle_init_args[1]}"
   else
     ngrok_test_token="$(resolve_ngrok_test_token)"
     NGROK_AUTHTOKEN="$ngrok_test_token" ./gradlew :app:test :privacy:test :privacy-benchmark:test
