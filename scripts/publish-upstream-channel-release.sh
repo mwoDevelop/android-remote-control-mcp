@@ -151,7 +151,10 @@ APKSIGNER="$(resolve_android_tool apksigner)"
 APKANALYZER="$(resolve_android_tool apkanalyzer)"
 [[ -d "$RELEASE_DIR" ]] || die "--release-dir must be an existing directory"
 [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "Invalid --repo value"
-validate_release_assets "$RELEASE_DIR" true || die "Release directory is incomplete, damaged or contains extra files"
+validation_status=0
+validate_release_assets "$RELEASE_DIR" true || validation_status=$?
+[[ $validation_status -eq 0 ]] ||
+  die "Release directory is incomplete, damaged or contains extra files (validation code $validation_status)"
 
 MANIFEST="$RELEASE_DIR/release-manifest.json"
 CHANNEL="$(json_value "$MANIFEST" channel)"
@@ -204,7 +207,10 @@ if [[ "$release_exists" == true ]]; then
   BACKUP_DIR="$TEMP_DIR/previous"
   mkdir -p "$BACKUP_DIR"
   gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --dir "$BACKUP_DIR"
-  validate_release_assets "$BACKUP_DIR" false || die "Existing release assets are incomplete or damaged"
+  validation_status=0
+  validate_release_assets "$BACKUP_DIR" false || validation_status=$?
+  [[ $validation_status -eq 0 ]] ||
+    die "Existing release assets are incomplete or damaged (validation code $validation_status)"
   PREVIOUS_MANIFEST="$BACKUP_DIR/release-manifest.json"
   PREVIOUS_SOURCE_SHA="$(json_value "$PREVIOUS_MANIFEST" source_sha)"
   [[ "$(json_value "$PREVIOUS_MANIFEST" release_tag)" == "$RELEASE_TAG" ]] ||
