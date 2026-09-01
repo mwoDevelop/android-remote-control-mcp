@@ -15,6 +15,8 @@ STORE_PASSWORD_FILE=""
 KEY_ALIAS=""
 KEY_PASSWORD_FILE=""
 EXPECTED_CERTIFICATE_SHA256=""
+LEDGER_ENTRY=""
+LIVE_TEST_EVIDENCE=""
 WORKFLOW_RUN_ID="${GITHUB_RUN_ID:-local}"
 WORKFLOW_SOURCE_SHA="${GITHUB_SHA:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
 TEMP_DIR=""
@@ -22,8 +24,9 @@ TEMP_DIR=""
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/sign-upstream-channel-release.sh \
+  scripts/sign-arcp-channel-release.sh \
     --input-dir <pre-sign-dir> --output-dir <release-dir> \
+    --ledger-entry <entry.json> --live-test-evidence <evidence.json> \
     --keystore <jks> --store-password-file <file> --key-alias <alias> \
     --key-password-file <file> --expected-certificate-sha256 <sha256> \
     [--workflow-run-id <id>]
@@ -130,6 +133,8 @@ while (($#)); do
       EXPECTED_CERTIFICATE_SHA256="$(normalize_digest "$2")"
       shift 2
       ;;
+    --ledger-entry) (($# >= 2)) || die "$1 requires a value"; LEDGER_ENTRY="$2"; shift 2 ;;
+    --live-test-evidence) (($# >= 2)) || die "$1 requires a value"; LIVE_TEST_EVIDENCE="$2"; shift 2 ;;
     --workflow-run-id) (($# >= 2)) || die "$1 requires a value"; WORKFLOW_RUN_ID="$2"; shift 2 ;;
     --workflow-source-sha) (($# >= 2)) || die "$1 requires a value"; WORKFLOW_SOURCE_SHA="${2,,}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
@@ -143,6 +148,9 @@ done
 [[ "$EXPECTED_CERTIFICATE_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
   die "--expected-certificate-sha256 must be a SHA-256 digest"
 [[ "$WORKFLOW_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "--workflow-source-sha must be a full commit SHA"
+[[ -f "$LEDGER_ENTRY" && ! -L "$LEDGER_ENTRY" ]] || die "--ledger-entry must be a regular file"
+[[ -f "$LIVE_TEST_EVIDENCE" && ! -L "$LIVE_TEST_EVIDENCE" ]] ||
+  die "--live-test-evidence must be a regular file"
 assert_private_file "$KEYSTORE" "Keystore"
 assert_private_file "$STORE_PASSWORD_FILE" "Store password file"
 assert_private_file "$KEY_PASSWORD_FILE" "Key password file"
@@ -161,7 +169,7 @@ APKSIGNER="$(resolve_android_tool apksigner)"
 ZIPALIGN="$(resolve_android_tool zipalign)"
 TEMP_BASE="${RUNNER_TEMP:-/tmp}"
 [[ -d "$TEMP_BASE" ]] || die "Temporary directory base does not exist: $TEMP_BASE"
-TEMP_DIR="$(mktemp -d "$TEMP_BASE/arcp-upstream-sign.XXXXXX")"
+TEMP_DIR="$(mktemp -d "$TEMP_BASE/arcp-channel-sign.XXXXXX")"
 
 mapfile -t input_files < <(find "$INPUT_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
 ((${#input_files[@]} == 4)) || die "Input directory must contain exactly four files"
@@ -169,8 +177,12 @@ mapfile -t manifests < <(find "$INPUT_DIR" -maxdepth 1 -type f -name 'manifest-*
 ((${#manifests[@]} == 2)) || die "Expected exactly two pre-sign manifests"
 
 CHANNEL=""
-SOURCE_LABEL=""
-SOURCE_SHA=""
+UPSTREAM_LABEL=""
+UPSTREAM_SHA=""
+LOCAL_REF=""
+LOCAL_SHA=""
+FEATURE_CONTRACT_SHA256=""
+SUBMODULES_JSON=""
 ROWS_FILE="$TEMP_DIR/assets.tsv"
 : >"$ROWS_FILE"
 
@@ -178,30 +190,51 @@ for variant in gmsRelease fossRelease; do
   mapfile -t matches < <(find "$INPUT_DIR" -maxdepth 1 -type f -name "manifest-${variant}-*.json" | sort)
   ((${#matches[@]} == 1)) || die "Expected exactly one $variant pre-sign manifest"
   manifest="${matches[0]}"
-  [[ "$(json_value "$manifest" schema_version)" == 2 ]] || die "Unsupported pre-sign manifest schema"
-  [[ "$(json_value "$manifest" type)" == upstream_channel_pre_sign ]] || die "Unexpected manifest type"
+  [[ "$(json_value "$manifest" schema_version)" == 3 ]] || die "Unsupported pre-sign manifest schema"
+  [[ "$(json_value "$manifest" type)" == arcp_channel_pre_sign ]] || die "Unexpected manifest type"
   [[ "$(json_value "$manifest" variant)" == "$variant" ]] || die "Manifest variant mismatch"
   [[ "$(json_value "$manifest" qualified)" == true ]] || die "Pre-sign artifact is not qualified"
   [[ "$(json_value "$manifest" mandatory_gates_skipped)" == false ]] || die "Mandatory gates were skipped"
   [[ "$(json_value "$manifest" signed)" == false ]] || die "Pre-sign artifact unexpectedly claims a signature"
   [[ "$(json_value "$manifest" application_id)" == "$PACKAGE_ID" ]] || die "Manifest package ID mismatch"
-  [[ "$(json_value "$manifest" qualification.profile)" == upstream_mirror_secretless ]] ||
+  [[ "$(json_value "$manifest" qualification.profile)" == arcp_fork_static ]] ||
     die "Unexpected qualification profile"
+  [[ "$(json_value "$manifest" qualification.ngrok_live_integration)" == pending_protected_job ]] ||
+    die "Unexpected live-test state before protected qualification"
   test_retry_occurred="$(json_value "$manifest" qualification.test_retry_occurred)"
   [[ "$test_retry_occurred" == true || "$test_retry_occurred" == false ]] || die "Invalid test retry provenance"
 
   manifest_channel="$(json_value "$manifest" channel)"
-  manifest_label="$(json_value "$manifest" source_label)"
-  manifest_sha="$(json_value "$manifest" source_sha)"
+  manifest_label="$(json_value "$manifest" upstream_label)"
+  manifest_sha="$(json_value "$manifest" upstream_sha)"
+  manifest_local_ref="$(json_value "$manifest" local_ref)"
+  manifest_local_sha="$(json_value "$manifest" local_sha)"
+  manifest_feature_contract="$(json_value "$manifest" feature_contract_sha256)"
+  manifest_submodules="$(node -e 'const m=require(process.argv[1]);process.stdout.write(JSON.stringify(m.submodules))' "$manifest")"
   [[ "$manifest_channel" == stable || "$manifest_channel" == edge ]] || die "Unknown channel in manifest"
-  [[ "$manifest_sha" =~ ^[0-9a-f]{40}$ ]] || die "Invalid source SHA in manifest"
+  [[ "$manifest_sha" =~ ^[0-9a-f]{40}$ && "$manifest_local_sha" =~ ^[0-9a-f]{40}$ ]] ||
+    die "Invalid source SHA in manifest"
+  [[ "$manifest_local_ref" == "release/$manifest_channel" ]] || die "Unexpected local integration ref"
+  [[ "$manifest_feature_contract" =~ ^[0-9a-f]{64}$ ]] || die "Invalid feature contract digest"
+  node -e '
+    const value=JSON.parse(process.argv[1]);
+    const required=["vendor/cloudflared","vendor/ngrok-java"];
+    if (!value || Array.isArray(value) || !required.every(k=>/^[0-9a-f]{40}$/.test(value[k]||""))) process.exit(1);
+  ' "$manifest_submodules" || die "Invalid submodule provenance"
   if [[ -z "$CHANNEL" ]]; then
     CHANNEL="$manifest_channel"
-    SOURCE_LABEL="$manifest_label"
-    SOURCE_SHA="$manifest_sha"
+    UPSTREAM_LABEL="$manifest_label"
+    UPSTREAM_SHA="$manifest_sha"
+    LOCAL_REF="$manifest_local_ref"
+    LOCAL_SHA="$manifest_local_sha"
+    FEATURE_CONTRACT_SHA256="$manifest_feature_contract"
+    SUBMODULES_JSON="$manifest_submodules"
   else
-    [[ "$CHANNEL" == "$manifest_channel" && "$SOURCE_LABEL" == "$manifest_label" &&
-       "$SOURCE_SHA" == "$manifest_sha" ]] || die "GMS and FOSS source provenance differs"
+    [[ "$CHANNEL" == "$manifest_channel" && "$UPSTREAM_LABEL" == "$manifest_label" &&
+       "$UPSTREAM_SHA" == "$manifest_sha" && "$LOCAL_REF" == "$manifest_local_ref" &&
+       "$LOCAL_SHA" == "$manifest_local_sha" && "$FEATURE_CONTRACT_SHA256" == "$manifest_feature_contract" &&
+       "$SUBMODULES_JSON" == "$manifest_submodules" ]] ||
+      die "GMS and FOSS source provenance differs"
   fi
 
   raw_name="$(json_value "$manifest" apk_asset)"
@@ -219,8 +252,8 @@ for variant in gmsRelease fossRelease; do
   flavor="${variant%Release}"
   flavor="${flavor,,}"
   aligned_apk="$TEMP_DIR/${flavor}-aligned.apk"
-  if [[ "$CHANNEL" == stable ]]; then release_component="$SOURCE_LABEL"; else release_component=edge; fi
-  signed_name="android-remote-control-mcp-upstream-${release_component}-${flavor}-release.apk"
+  release_tag="$(json_value "$LEDGER_ENTRY" release_tag)"
+  signed_name="android-remote-control-mcp-${release_tag}-${flavor}-release.apk"
   signed_apk="$OUTPUT_DIR/$signed_name"
   "$ZIPALIGN" -f -p 4 "$raw_apk" "$aligned_apk"
   "$ZIPALIGN" -c -p 4 "$aligned_apk"
@@ -239,17 +272,30 @@ for variant in gmsRelease fossRelease; do
     "$app_id" "$version_code" "$version_name" "$signer_digest" "$test_retry_occurred" >>"$ROWS_FILE"
 done
 
-if [[ "$CHANNEL" == stable ]]; then
-  [[ "$SOURCE_LABEL" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Stable source label is not a strict version tag"
-  RELEASE_TAG="upstream-$SOURCE_LABEL"
-else
-  [[ "$SOURCE_LABEL" == edge ]] || die "Edge source label must be edge"
-  RELEASE_TAG="upstream-edge"
-fi
+[[ "$(json_value "$LEDGER_ENTRY" channel)" == "$CHANNEL" ]] || die "Ledger channel mismatch"
+[[ "$(json_value "$LEDGER_ENTRY" upstream_label)" == "$UPSTREAM_LABEL" ]] || die "Ledger upstream label mismatch"
+[[ "$(json_value "$LEDGER_ENTRY" upstream_sha)" == "$UPSTREAM_SHA" ]] || die "Ledger upstream SHA mismatch"
+[[ "$(json_value "$LEDGER_ENTRY" local_sha)" == "$LOCAL_SHA" ]] || die "Ledger local SHA mismatch"
+RELEASE_TAG="$(json_value "$LEDGER_ENTRY" release_tag)"
+ALLOCATED_VERSION_CODE="$(json_value "$LEDGER_ENTRY" version_code)"
+[[ "$RELEASE_TAG" =~ ^arcp-(stable|edge)-[A-Za-z0-9._-]+-vc[0-9]+$ ]] || die "Invalid immutable ARCP release tag"
+[[ "$ALLOCATED_VERSION_CODE" =~ ^[1-9][0-9]*$ && "$ALLOCATED_VERSION_CODE" -le 2100000000 ]] ||
+  die "Invalid allocated version code"
+for variant in gmsRelease fossRelease; do
+  recorded_code="$(awk -F '\t' -v wanted="$variant" '$1 == wanted {print $8}' "$ROWS_FILE")"
+  [[ "$recorded_code" == "$ALLOCATED_VERSION_CODE" ]] || die "$variant is not bound to the ledger version code"
+done
+
+[[ "$(json_value "$LIVE_TEST_EVIDENCE" schema_version)" == 1 ]] || die "Unsupported live-test evidence"
+[[ "$(json_value "$LIVE_TEST_EVIDENCE" type)" == arcp_live_test ]] || die "Unexpected live-test evidence type"
+[[ "$(json_value "$LIVE_TEST_EVIDENCE" passed)" == true ]] || die "Protected live test did not pass"
+[[ "$(json_value "$LIVE_TEST_EVIDENCE" channel)" == "$CHANNEL" &&
+   "$(json_value "$LIVE_TEST_EVIDENCE" upstream_sha)" == "$UPSTREAM_SHA" &&
+   "$(json_value "$LIVE_TEST_EVIDENCE" local_sha)" == "$LOCAL_SHA" ]] || die "Live-test source mismatch"
 
 node -e '
   const fs=require("fs");
-  const [out,rowsFile,channel,label,sourceSha,tag,cert,runId,workflowSourceSha]=process.argv.slice(1);
+  const [out,rowsFile,channel,label,upstreamSha,localRef,localSha,featureContract,submodulesJson,tag,cert,runId,workflowSourceSha]=process.argv.slice(1);
   const assets=fs.readFileSync(rowsFile,"utf8").trim().split("\n").filter(Boolean).map(line=>{
     const [variant,rawUnsignedAsset,rawUnsignedSha256,zipalignedSha256,signedAsset,signedSha256,
       applicationId,versionCode,versionName,certificateSha256,testRetryOccurred]=line.split("\t");
@@ -258,30 +304,34 @@ node -e '
       application_id:applicationId,version_code:Number(versionCode),version_name:versionName,
       certificate_sha256:certificateSha256,test_retry_occurred:testRetryOccurred==="true"};
   });
-  fs.writeFileSync(out,JSON.stringify({schema_version:2,type:"upstream_channel_release",
-    created_at:new Date().toISOString(),channel,release_tag:tag,prerelease:true,
-    tag_target_semantics:"trusted_fork_workflow_commit",source_repository:
-      "https://github.com/danielealbano/android-remote-control-mcp",source_label:label,source_sha:sourceSha,
-    qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source",
+  fs.writeFileSync(out,JSON.stringify({schema_version:3,type:"arcp_channel_release",immutable:true,
+    created_at:new Date().toISOString(),channel,release_tag:tag,prerelease:channel==="edge",
+    tag_target_semantics:"local_integration_commit",source_repository:
+      "https://github.com/mwoDevelop/android-remote-control-mcp",upstream_repository:
+      "https://github.com/danielealbano/android-remote-control-mcp",upstream_label:label,
+    upstream_sha:upstreamSha,local_ref:localRef,local_sha:localSha,feature_contract_sha256:featureContract,
+    submodules:JSON.parse(submodulesJson),
+    qualification:{profile:"arcp_fork_release",ngrok_live_integration:"passed_protected_job",
       mandatory_gates_skipped:false},workflow_run_id:runId,workflow_source_sha:workflowSourceSha,
       certificate_sha256:cert,assets},null,2)+"\n");
-' "$OUTPUT_DIR/release-manifest.json" "$ROWS_FILE" "$CHANNEL" "$SOURCE_LABEL" "$SOURCE_SHA" \
-  "$RELEASE_TAG" "$EXPECTED_CERTIFICATE_SHA256" "$WORKFLOW_RUN_ID" "$WORKFLOW_SOURCE_SHA"
+' "$OUTPUT_DIR/release-manifest.json" "$ROWS_FILE" "$CHANNEL" "$UPSTREAM_LABEL" "$UPSTREAM_SHA" \
+  "$LOCAL_REF" "$LOCAL_SHA" "$FEATURE_CONTRACT_SHA256" "$SUBMODULES_JSON" "$RELEASE_TAG" "$EXPECTED_CERTIFICATE_SHA256" \
+  "$WORKFLOW_RUN_ID" "$WORKFLOW_SOURCE_SHA"
 
 cat >"$OUTPUT_DIR/release-notes.md" <<EOF
-Pure official-upstream **$CHANNEL** mirror built from \
-\`danielealbano/android-remote-control-mcp@$SOURCE_SHA\` ($SOURCE_LABEL).
+ARCP local-fork **$CHANNEL** release built from owner integration \
+\`mwoDevelop/android-remote-control-mcp@$LOCAL_SHA\` on top of official upstream \
+\`danielealbano/android-remote-control-mcp@$UPSTREAM_SHA\` ($UPSTREAM_LABEL).
 
-This is always a pre-release in this fork. These APKs do **not** contain the fork-only administrator, Shizuku,
-trusted unlock/sleep or origin-recovery extensions.
+This APK **includes** the owner administrator, Shizuku, trusted unlock, remote sleep and tunnel/origin recovery
+extensions. The release identity is immutable and its Android version code is allocated in the owner release ledger.
 
-**Manual-install warning:** the APK keeps package ID \`$PACKAGE_ID\` and is signed with this fork owner's key. It can
-replace an installed fork build and thereby remove fork-only features, and it may not be signature-compatible with an
-APK signed by the official upstream author.
+The APK keeps package ID \`$PACKAGE_ID\` and is signed with this fork owner's key. It may not be signature-compatible
+with an APK signed by the official upstream author.
 
-See \`release-manifest.json\` for source, qualification and SHA-256 provenance. The live ngrok account integration
-test is intentionally not applicable to this secretless untrusted-source build profile; it receives no account token.
+See \`release-manifest.json\` for dual-source, feature-contract, qualification, signer and SHA-256 provenance. Static
+qualification was secretless; the live ngrok test passed separately with a protected least-privilege credential.
 EOF
 
-printf 'Signed upstream %s bundle: %s (%s)\nRelease tag: %s\nOutput: %s\n' \
-  "$CHANNEL" "$SOURCE_LABEL" "$SOURCE_SHA" "$RELEASE_TAG" "$OUTPUT_DIR"
+printf 'Signed ARCP %s bundle: upstream=%s/%s local=%s\nRelease tag: %s\nOutput: %s\n' \
+  "$CHANNEL" "$UPSTREAM_LABEL" "$UPSTREAM_SHA" "$LOCAL_SHA" "$RELEASE_TAG" "$OUTPUT_DIR"

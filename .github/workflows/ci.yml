@@ -67,12 +67,17 @@ jobs:
       - name: Validate release automation shell and contracts
         run: |
           bash -n scripts/sync-build-deploy.sh \
-            scripts/sign-upstream-channel-release.sh \
-            scripts/publish-upstream-channel-release.sh \
+            scripts/arcp-version-ledger.sh \
+            scripts/arcp-release-artifact.sh \
+            scripts/sign-arcp-channel-release.sh \
+            scripts/publish-arcp-channel-release.sh \
             scripts/tests/test-sync-build-deploy.sh \
-            scripts/tests/test-upstream-channel-release.sh
+            scripts/tests/test-arcp-version-ledger.sh \
+            scripts/tests/test-arcp-channel-release.sh
+          node --check scripts/verify-arcp-channel-features.mjs
           scripts/tests/test-sync-build-deploy.sh
-          scripts/tests/test-upstream-channel-release.sh
+          scripts/tests/test-arcp-version-ledger.sh
+          scripts/tests/test-arcp-channel-release.sh
 
       - name: Validate GitHub Actions workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
@@ -144,9 +149,10 @@ jobs:
           JAVA_17_HOME: ${{ env.JAVA_HOME }}
 
       - name: Run unit tests with coverage
-        env:
-          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
-        run: ./gradlew :app:test :privacy:test :privacy-benchmark:test jacocoTestReport jacocoTestCoverageVerification
+        run: >-
+          ./gradlew -I scripts/gradle/arcp-fork-static.init.gradle
+          :app:test :privacy:test :privacy-benchmark:test
+          jacocoTestReport jacocoTestCoverageVerification
 
       - name: Upload unit test results
         if: always()
@@ -209,7 +215,7 @@ jobs:
         if: steps.cache-cloudflared.outputs.cache-hit != 'true'
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.6'
+          go-version: '1.26.7'
 
       - name: Set up Rust
         if: steps.cache-ngrok-android.outputs.cache-hit != 'true'
@@ -365,7 +371,7 @@ jobs:
         if: steps.cache-cloudflared.outputs.cache-hit != 'true'
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.6'
+          go-version: '1.26.7'
 
       - name: Set up Rust
         if: steps.cache-ngrok-android.outputs.cache-hit != 'true'

@@ -128,7 +128,7 @@ jobs:
         if: steps.cache-cloudflared.outputs.cache-hit != 'true'
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.6'
+          go-version: '1.26.7'
 
       - name: Set up Rust
         if: steps.cache-ngrok-android.outputs.cache-hit != 'true'

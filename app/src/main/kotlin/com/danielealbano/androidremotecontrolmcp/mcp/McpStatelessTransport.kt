@@ -1,10 +1,7 @@
 package com.danielealbano.androidremotecontrolmcp.mcp
 
-import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClass
-import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassAttribute
-import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClassElement
 import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthPhase
-import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpOAuthClientIdAttribute
+import com.mwodevelop.androidremotecontrolmcp.compat.ownerMcpRequestContext
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.request.path
@@ -43,13 +40,7 @@ fun Application.installMcpStatelessTransport(
     insertPhaseAfter(McpAuthPhase, McpRequestContextPhase)
     intercept(McpRequestContextPhase) {
         if (call.request.path() == "/mcp") {
-            val authClientClass =
-                call.attributes.getOrNull(McpAuthClientClassAttribute) ?: McpAuthClientClass.UNKNOWN
-            val oauthClientId = call.attributes.getOrNull(McpOAuthClientIdAttribute)
-            withContext(
-                RequestBaseUrlElement(effectiveBaseUrl(call, publicUrlOverride)) +
-                    McpAuthClientClassElement(authClientClass, oauthClientId),
-            ) {
+            withContext(ownerMcpRequestContext(call, publicUrlOverride)) {
                 proceed()
             }
         } else {
