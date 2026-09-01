@@ -1,4 +1,4 @@
-<!-- PLANNED — no implementation or release mutation has been performed. -->
+<!-- IMPLEMENTED AND TESTED LOCALLY — no GitHub Release mutation has been performed. -->
 <!-- Never commit keystores, signing passwords, tokens, generated properties or release credentials. -->
 
 # Plan 72 — Publish qualified stable and edge builds from the official upstream
@@ -7,6 +7,36 @@ Automate GitHub Release publication for the two already supported pure-upstream 
 consume the same channel resolution and build entrypoint as local use: `build --latest-stable` for the newest strict
 `vMAJOR.MINOR.PATCH` tag and `build --latest-edge` for the official moving `edge` tag. It must not add an arbitrary
 `develop` or branch-name channel.
+
+## Implementation status — 2026-09-01
+
+Implemented in local commits `15fed32`, `c3a81f9` and `05f77a4`:
+
+- secretless unsigned Release builds through `--latest-stable` / `--latest-edge`, with
+  `--expected-source-sha` as a fail-closed guard and no arbitrary developer channel;
+- portable per-variant pre-sign manifests, one bounded test-task retry recorded in provenance, and separate trusted
+  signing with raw/zipaligned/signed hashes;
+- stable immutable and edge rolling publication logic, pre-release enforcement, exact asset allowlists, remote asset
+  re-verification, edge backup plus best-effort rollback, and non-mutating dry-run by default;
+- a scheduled/manual GitHub workflow with pinned Actions, non-persisted build credentials, read-only untrusted build
+  permissions, protected signing environment and an explicit repository-variable activation switch;
+- root and detailed release-channel documentation plus CI execution of shell/contract/actionlint validation.
+
+Local acceptance evidence:
+
+- 32 build/deploy contract tests and 12 release-workflow tests pass for stable/edge, GMS/FOSS, wrong certificate,
+  source drift, unsupported branch, extra/damaged/missing assets, stable idempotence and rolling edge replacement;
+- `actionlint v1.7.7`, shell syntax and the secretless Gradle init script validate;
+- real stable `v1.12.0` source `3777403d148283c5a18a3e8122ff819da4eed808` produced qualified unsigned
+  `gmsRelease` and `fossRelease` APKs; a temporary test certificate signed both, both re-verified and the publisher
+  completed a no-mutation dry run;
+- real edge source `16f39717ce0969aa81a4ec132ba1cad861ba46cc` produced a qualified unsigned `gmsRelease` APK;
+- a confirmed upstream server-start race failed once in a repeated stable test run. The workflow now retries the same
+  secretless Gradle task at most once; deterministic double failures remain fatal and the retry is recorded.
+
+Deliberately pending: push/remote Actions execution, configuration of the protected Environment/secrets/variables,
+and real `upstream-edge`/stable GitHub Release creation, download and rerun. Those are external mutations and require
+explicit authorization. No APK was deployed to a phone.
 
 ## Current verified state
 
