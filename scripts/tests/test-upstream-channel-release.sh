@@ -107,7 +107,7 @@ sign_bundle() {
 }
 
 test_cli_and_workflow_contracts() {
-  local build_job
+  local build_job sign_job
   if rg -n 'uses: [^ ]+@(v[0-9]+|main|master|stable)$' "$REPO_ROOT/.github/workflows/upstream-channel-release.yml"; then
     printf 'not ok - workflow contains an unpinned action\n' >&2
     exit 1
@@ -119,6 +119,8 @@ test_cli_and_workflow_contracts() {
   [[ "$build_job" != *'secrets.'* && "$build_job" == *'--latest-$CHANNEL'* ]]
   [[ "$build_job" == *'git remote add upstream'* && "$build_job" == *'git remote set-url --push upstream DISABLED'* ]]
   [[ "$build_job" == *'rustup target add aarch64-linux-android x86_64-linux-android'* ]]
+  sign_job="$(sed -n '/^  sign-and-publish:/,$p' "$REPO_ROOT/.github/workflows/upstream-channel-release.yml")"
+  [[ "$sign_job" == *'git remote add upstream'* && "$sign_job" == *'git remote set-url --push upstream DISABLED'* ]]
   [[ "$(rg -c 'NGROK_AUTHTOKEN' "$REPO_ROOT/scripts/gradle/upstream-mirror-secretless.init.gradle")" -eq 0 ]]
   rg -q 'NgrokTunnelIntegrationTest' "$REPO_ROOT/scripts/gradle/upstream-mirror-secretless.init.gradle"
   rg -q 'https://api.github.com/repos/danielealbano/android-remote-control-mcp/releases/latest' \
