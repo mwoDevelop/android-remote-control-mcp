@@ -149,19 +149,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full build requirements and instructi
 
 ## Release Channels
 
-This fork keeps three release streams separate:
+This fork has two reviewed owner channels selected by their official baseline:
 
-- fork releases (`v*` and `edge`) contain the reviewed fork features;
-- official-upstream stable mirrors (`upstream-vMAJOR.MINOR.PATCH`) are built through `--latest-stable`;
-- the official-upstream rolling mirror (`upstream-edge`) is built through `--latest-edge`.
+- ARCP stable: official strict stable tag plus the compatible local feature port on `release/stable`;
+- ARCP edge: official `edge` tag plus the current local features on `release/edge`.
 
-Both mirror streams are always GitHub pre-releases and contain only GMS/FOSS Release APKs from the selected official
-upstream source. They are built without signing or account secrets, then signed and independently verified in a
-separate trusted job. The workflow never deploys a mirror APK to a managed device and does not support arbitrary
-developer branches.
+Both include the owner extensions and publish immutable GMS/FOSS bundles. Historical `upstream-*` mirror releases are
+audit-only and must not be used for managed-device delivery. Arbitrary developer branches are not release channels.
 
-See [Official upstream channel releases](docs/UPSTREAM_CHANNEL_RELEASES.md) for local commands, provenance, GitHub
-configuration, activation and failure behavior.
+See [ARCP stable and edge releases](docs/ARCP_CHANNEL_RELEASES.md) for source topology, version ledger, protected
+workflow, released-APK verification and [REDACTED_DEVICE_ALIAS] promotion.
 
 ---
 
@@ -397,12 +394,20 @@ and matching installed/candidate signing certificates.
 Pinned native dependencies use the same entrypoint with explicit refs, for example
 `./scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply`; vendor updates must be fast-forwards.
 
-The `build` command also has two explicit upstream-channel modes. `--latest-stable` resolves the highest official
-strict `vMAJOR.MINOR.PATCH` tag, while `--latest-edge` resolves the official moving `edge` tag. Each mode fetches into
-a private local ref, builds the exact upstream commit in an isolated temporary worktree, leaves `main` unchanged and
-never deploys. The APK and a provenance manifest are copied to `build/channels/stable/` or `build/channels/edge/`.
-These are pure official-upstream builds, so they intentionally exclude this fork's custom commits and `myconf/`.
-Every build also compiles the pinned host `cloudflared` into ignored `build/host-tools/` and adds it to the test
+The `build` command also has two explicit ARCP channel modes. `--latest-stable` resolves the newest official strict
+`vMAJOR.MINOR.PATCH` baseline and builds the reviewed `origin/release/stable` integration; `--latest-edge` resolves the
+official moving `edge` tag and builds `origin/release/edge`. Both branches contain the local administrator, Shizuku,
+trusted unlock/sleep and recovery features. The resolver proves the corresponding official baseline is an ancestor,
+rejects edge ancestry on stable, binds both full SHAs and exact submodule SHAs in the manifest, and never updates a
+release branch implicitly. Installable channel builds require an explicit version allocated by the append-only
+`release/version-ledger` ref.
+
+The manual `ARCP channel release` workflow builds both GMS and FOSS without secrets, runs the live ngrok test in a
+separate `arcp-live-tests` environment, and signs only after both gates pass. It publishes immutable namespaced tags;
+edge releases are GitHub pre-releases. Historical `upstream-*` mirror releases contain no local features and must not
+be installed on managed devices. See [ARCP channel releases](docs/ARCP_CHANNEL_RELEASES.md).
+
+Every local build compiles the pinned host `cloudflared` into ignored `build/host-tools/` and adds it to the test
 process `PATH`; the Cloudflare integration gate therefore does not depend on a separately installed host binary. If
 Go or Maven is absent, the script extracts pinned toolchains from digest-pinned official containers into the same
 ignored directory, so no system-wide installation is required (Docker is the fallback prerequisite).
@@ -410,8 +415,8 @@ ignored directory, so no system-wide installation is required (Docker is the fal
 ```bash
 ./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
 ./scripts/sync-build-deploy.sh build --variant gmsDebug
-./scripts/sync-build-deploy.sh build --latest-stable --variant gmsDebug
-./scripts/sync-build-deploy.sh build --latest-edge --variant gmsDebug
+./scripts/sync-build-deploy.sh channel-info --latest-stable
+./scripts/sync-build-deploy.sh channel-info --latest-edge
 ./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
 ```
 

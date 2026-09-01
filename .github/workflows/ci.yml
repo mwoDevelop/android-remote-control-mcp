@@ -143,7 +143,7 @@ jobs:
           mvn package -pl ngrok-java -DskipTests --global-toolchains toolchains.xml -q
           (cd ngrok-java-native/target/classes && jar cf ../ngrok-java-native-classes.jar com/)
           (cd ngrok-java-native && cargo build --release)
-          (cd ngrok-java-native/target/release && jar cf ../ngrok-java-native-host.jar $(ls libngrok_java.so libngrok_java.dylib 2>/dev/null))
+          (cd ngrok-java-native/target/release && jar cf ../ngrok-java-native-host.jar libngrok_java.so)
         env:
           JAVA_11_HOME: ${{ env.JAVA_HOME }}
           JAVA_17_HOME: ${{ env.JAVA_HOME }}
@@ -275,7 +275,7 @@ jobs:
         run: |
           # Install kernel module package (binder_linux is in linux-modules-extra)
           sudo apt-get update -qq
-          sudo apt-get install -y -qq linux-modules-extra-$(uname -r)
+          sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)"
           # Load required kernel modules
           sudo modprobe binder_linux devices="binder,hwbinder,vndbinder"
           sudo modprobe fuse

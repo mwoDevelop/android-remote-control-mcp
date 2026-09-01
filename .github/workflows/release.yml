@@ -82,16 +82,20 @@ jobs:
             exit 1
           fi
 
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "is-prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "is-prerelease=$IS_PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
 
-          echo "### Parsed Tag" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Tag | \`$TAG\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version Name | \`$VERSION\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Pre-release | $IS_PRERELEASE |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Parsed Tag"
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Tag | \`$TAG\` |"
+            echo "| Version Name | \`$VERSION\` |"
+            echo "| Pre-release | $IS_PRERELEASE |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ── 5. Setup build toolchains (same as CI build-release job) ──
       - name: Set up JDK 17
@@ -218,11 +222,13 @@ jobs:
             fi
           done
 
-          echo "### Release Assets" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          ls -lh release-assets/ >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Release Assets"
+            echo ""
+            echo '```'
+            ls -lh release-assets/
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ── 9. Create draft release with APK attachments ──
       #      Notes are left to GitHub's native --generate-notes; the draft body
@@ -246,9 +252,11 @@ jobs:
             $PRERELEASE_FLAG \
             release-assets/*.apk
 
-          echo "### Draft Release Created" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Tag: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pre-release: $IS_PRERELEASE" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "[View release](https://github.com/${REPO}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Draft Release Created"
+            echo ""
+            echo "Tag: \`$TAG\`"
+            echo "Pre-release: $IS_PRERELEASE"
+            echo ""
+            echo "[View release](https://github.com/${REPO}/releases/tag/${TAG})"
+          } >> "$GITHUB_STEP_SUMMARY"

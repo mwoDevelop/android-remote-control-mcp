@@ -162,13 +162,15 @@ jobs:
           # The step-summary table cell gets the same code-span treatment as the
           # release body, plus pipe escaping so the value cannot break the table.
           SUMMARY_LAST_CHANGE="${LAST_CHANGE//|/\\|}"
-          echo "### Edge Metadata" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | \`$VERSION\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit | \`$SHORT_SHA\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Built | $BUILT_AT UTC |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Last change | \`$SUMMARY_LAST_CHANGE\` |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Edge Metadata"
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Version | \`$VERSION\` |"
+            echo "| Commit | \`$SHORT_SHA\` |"
+            echo "| Built | $BUILT_AT UTC |"
+            echo "| Last change | \`$SUMMARY_LAST_CHANGE\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ── 3. Setup build toolchains (same as release.yml) ──
       - name: Set up JDK 17
@@ -288,11 +290,13 @@ jobs:
               "release-assets/android-remote-control-mcp-edge-${flavor}-release.apk"
           done
 
-          echo "### Edge Assets" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          ls -lh release-assets/ >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Edge Assets"
+            echo ""
+            echo '```'
+            ls -lh release-assets/
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ── 9. Freshness guard: skip publishing if main moved past this commit ──
       #        Runs queue in this concurrency group instead of cancelling, so a
@@ -370,8 +374,10 @@ jobs:
               release-assets/*.apk
           fi
 
-          echo "### Edge Release Updated" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Version: \`$VERSION\` (commit \`$SHORT_SHA\`)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "[View release](https://github.com/${REPO}/releases/tag/edge)" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Edge Release Updated"
+            echo ""
+            echo "Version: \`$VERSION\` (commit \`$SHORT_SHA\`)"
+            echo ""
+            echo "[View release](https://github.com/${REPO}/releases/tag/edge)"
+          } >> "$GITHUB_STEP_SUMMARY"

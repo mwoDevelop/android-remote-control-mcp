@@ -154,35 +154,35 @@ publisher lock, security backport inventory, exact submodule provenance and host
 
 ### Phase 2 — Channel resolver and contract tests on `main`
 
-- [ ] Change `--latest-stable` / `--latest-edge` from official detached-source builds to reviewed local integration
+- [x] Change `--latest-stable` / `--latest-edge` from official detached-source builds to reviewed local integration
   builds while retaining official baseline resolution.
-- [ ] Add exact local-ref/SHA guards and explicit version-name/version-code inputs for release builds.
-- [ ] Replace upstream-only manifest fields/profile/names with dual upstream/local ARCP provenance.
-- [ ] Add protected append-only version-ledger allocation/lookup and require its explicit code for every installable
+- [x] Add exact local-ref/SHA guards and explicit version-name/version-code inputs for release builds.
+- [x] Replace upstream-only manifest fields/profile/names with dual upstream/local ARCP provenance.
+- [x] Add protected append-only version-ledger allocation/lookup and require its explicit code for every installable
   owner Release build.
-- [ ] Add `download-release`, `verify-release` and `deploy-release` with immutable-tag and known-good rollback checks.
+- [x] Add `download-release`, `verify-release` and `deploy-release` with immutable-tag and known-good rollback checks.
 - [ ] Add contract tests for correct refs, stale/missing branches, stable containing edge, upstream drift, local-ref
   drift, dirty tree, ledger races/retries/max/equality, immutable identity, release asset attacks, secret boundaries and
   one-selector/one-artifact behavior.
 
 ### Phase 3 — Create and qualify both integration branches
 
-- [ ] Create `release/edge` from the qualified local `main` commit.
-- [ ] Create `release/stable` from official stable `v1.12.0` and port the final owner runtime/build delta without the
+- [x] Create `release/edge` from the qualified local `main` commit.
+- [x] Create `release/stable` from official stable `v1.12.0` and port the final owner runtime/build delta without the
   intervening upstream edge commits.
-- [ ] Create and validate the machine-readable owner patch/feature ledger, closed capability parity matrix and stable
+- [x] Create and validate the machine-readable owner patch/feature ledger, closed capability parity matrix and stable
   security/backport inventory before declaring the stable branch complete.
-- [ ] Implement stable transport/auth/ADB compatibility adapters and keep branch-specific changes narrow.
+- [x] Implement stable transport/auth/ADB compatibility adapters and keep branch-specific changes narrow.
 - [ ] Run formatting, static analysis, unit/integration tests, E2E compilation and signed GMS/FOSS build qualification
   independently on both branches.
 - [ ] Push branches only after local qualification and audit their tracked files for secrets/signing material.
 
 ### Phase 4 — ARCP release workflow
 
-- [ ] Add trusted signing and publisher support for ARCP dual-source manifests, exact submodule provenance and
+- [x] Add trusted signing and publisher support for ARCP dual-source manifests, exact submodule provenance and
   immutable namespaced tags/assets.
-- [ ] Update the GitHub workflow, repository variables/environment and activation guard without exposing secrets.
-- [ ] Preserve exact allowlists, independent signer/package/native-payload verification, immutable stable/edge
+- [x] Update the GitHub workflow, repository variables/environment and activation guard without exposing secrets.
+- [x] Preserve exact allowlists, independent signer/package/native-payload verification, immutable stable/edge
   releases, authoritative freshness and optional post-publication alias handling.
 - [ ] Validate shell syntax, actionlint and all release contract tests. Run a no-mutation dry run for both channels.
 
