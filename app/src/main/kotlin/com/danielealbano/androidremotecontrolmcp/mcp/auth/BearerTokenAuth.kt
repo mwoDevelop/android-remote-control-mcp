@@ -54,9 +54,6 @@ class McpAuthConfig {
     var onAuthFailure: ((remoteInfo: String) -> Unit)? = null
 }
 
-/** Stable pipeline phase used by request-scoped MCP context after authentication succeeds. */
-internal val McpAuthPhase = PipelinePhase("McpAuth")
-
 /**
  * Ktor Application-level plugin enforcing combined MCP authentication: static bearer token OR issued
  * OAuth access token (dual-accept). Open when both methods are disabled.

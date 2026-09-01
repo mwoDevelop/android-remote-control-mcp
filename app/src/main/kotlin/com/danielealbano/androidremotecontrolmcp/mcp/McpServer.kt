@@ -10,6 +10,7 @@ import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthRouteDeps
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.OAuthServerDeps
 import com.danielealbano.androidremotecontrolmcp.mcp.oauth.installOAuthRoutes
 import com.danielealbano.androidremotecontrolmcp.services.sharing.EphemeralFileLinkService
+import com.mwodevelop.androidremotecontrolmcp.compat.installStableMcpRequestContext
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.engine.EmbeddedServer
@@ -170,6 +171,7 @@ class McpServer(
             excludedPathPrefixes = setOf(EphemeralFileLinkService.PATH_PREFIX, "/.well-known/")
             onAuthFailure = { serverLog.log(ServerLogEntry.Type.AUTH, "Authentication failed from $it") }
         }
+        installStableMcpRequestContext(config.publicUrlOverride)
 
         // Health check endpoint — unauthenticated, installed before MCP routes.
         // BearerTokenAuthPlugin skips paths matching "/health" (no auth required).

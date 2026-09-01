@@ -52,7 +52,7 @@ tasks.withType<DependencyUpdatesTask> {
 // AGP-internal tooling configurations, and the forces must apply to :app, :compose-test-app and
 // :e2e-tests alike — so force every affected transitive up to its first patched release across ALL
 // projects and ALL configurations. The shipping runtime is unaffected: Ktor's server engine keeps its
-// netty 4.2.x line (pinned to 4.2.16.Final by :app constraints, which this 4.1.x rule never matches),
+// netty 4.2.x line (pinned to 4.2.17.Final by :app constraints, which this 4.1.x rule never matches),
 // and the app's direct bouncycastle is already 1.85.
 allprojects {
     configurations.configureEach {
@@ -61,8 +61,10 @@ allprojects {
             val name = requested.name
             when {
                 group == "io.netty" && requested.version?.startsWith("4.1.") == true -> {
-                    useVersion("4.1.136.Final")
-                    because("CVE-patched netty; UTP/grpc-netty pulls a vulnerable 4.1.x tooling transitive")
+                    useVersion("4.1.137.Final")
+                    because(
+                        "CVE-2026-59903 (and earlier); UTP/grpc-netty pulls a vulnerable 4.1.x tooling transitive",
+                    )
                 }
                 group == "org.bouncycastle" &&
                     name in setOf("bcprov-jdk18on", "bcutil-jdk18on", "bcpkix-jdk18on") -> {

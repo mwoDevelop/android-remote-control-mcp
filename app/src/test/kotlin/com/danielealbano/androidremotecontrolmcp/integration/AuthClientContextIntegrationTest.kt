@@ -3,8 +3,9 @@ package com.danielealbano.androidremotecontrolmcp.integration
 import com.danielealbano.androidremotecontrolmcp.mcp.auth.McpAuthClientClass
 import com.danielealbano.androidremotecontrolmcp.mcp.auth.currentMcpAuthClientClass
 import com.danielealbano.androidremotecontrolmcp.mcp.installMcpBasePlugins
-import com.danielealbano.androidremotecontrolmcp.mcp.installMcpStatelessTransport
+import com.danielealbano.androidremotecontrolmcp.mcp.mcpStreamableHttp
 import com.danielealbano.androidremotecontrolmcp.mcp.tools.McpToolUtils
+import com.mwodevelop.androidremotecontrolmcp.compat.installStableMcpRequestContext
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.request.header
 import io.ktor.serialization.kotlinx.json.json
@@ -54,7 +55,8 @@ class AuthClientContextIntegrationTest {
                         oauthEnabled = true
                         validateOAuthToken = { token, _ -> token == OAUTH_TOKEN }
                     }
-                    installMcpStatelessTransport { server }
+                    installStableMcpRequestContext("")
+                    mcpStreamableHttp { server }
                 }
 
                 val bearerClient = connectMcp(STATIC_TOKEN, "bearer-client")
