@@ -199,6 +199,10 @@ test_go_toolchain_bootstrap() {
   repo="$(new_repo)"
   (
     eval "$(sed -n '/^prepare_go_toolchain() {/,/^}/p' "$SOURCE_SCRIPT")"
+    command() {
+      if [[ "${1:-}" == -v && "${2:-}" == go ]]; then return 1; fi
+      builtin command "$@"
+    }
     require_command() { :; }
     die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
     docker() {
@@ -228,6 +232,10 @@ test_maven_toolchain_bootstrap() {
   repo="$(new_repo)"
   (
     eval "$(sed -n '/^prepare_maven_toolchain() {/,/^}/p' "$SOURCE_SCRIPT")"
+    command() {
+      if [[ "${1:-}" == -v && "${2:-}" == mvn ]]; then return 1; fi
+      builtin command "$@"
+    }
     require_command() { :; }
     die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
     docker() {
