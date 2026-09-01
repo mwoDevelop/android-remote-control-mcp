@@ -156,7 +156,6 @@ test_first_install_absent_package_probe() {
   [[ -z "$output" ]]
   pass 'generic first-install treats an absent package as the expected empty pre-state'
 }
-
 test_sign_and_dry_run() {
   local input="$WORK_ROOT/input" output="$WORK_ROOT/output" dry
   make_inputs "$input"

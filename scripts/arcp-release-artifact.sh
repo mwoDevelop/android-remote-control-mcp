@@ -54,7 +54,8 @@ resolve_android_tool() {
 
 json_value() {
   node -e '
-    const value=process.argv[2].split(".").reduce((v,k)=>v==null?undefined:v[k],require(process.argv[1]));
+    const data=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+    const value=process.argv[2].split(".").reduce((v,k)=>v==null?undefined:v[k],data);
     if (value===undefined || value===null) process.exit(2); process.stdout.write(String(value));
   ' "$1" "$2"
 }
@@ -85,6 +86,7 @@ cleanup() {
     "${ADB[@]}" -s "$FIRST_INSTALL_SERIAL" uninstall "$PACKAGE_ID" >/dev/null 2>&1 || true
   fi
   [[ -z "$TEMP_DIR" || ! -d "$TEMP_DIR" ]] || rm -rf -- "$TEMP_DIR"
+  [[ -z "$LEDGER_VERIFY" || ! -f "$LEDGER_VERIFY" ]] || rm -f -- "$LEDGER_VERIFY"
 }
 trap cleanup EXIT INT TERM
 
@@ -160,7 +162,8 @@ LOCAL_SHA="$(json_value "$MANIFEST" local_sha)"
 UPSTREAM_SHA="$(json_value "$MANIFEST" upstream_sha)"
 CERTIFICATE="$(json_value "$MANIFEST" certificate_sha256)"
 mapfile -t expected_files < <(node -e '
-  const m=require(process.argv[1]); console.log("release-manifest.json"); for (const a of m.assets) console.log(a.signed_asset);
+  const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+  console.log("release-manifest.json"); for (const a of m.assets) console.log(a.signed_asset);
 ' "$MANIFEST" | sort)
 mapfile -t actual_files < <(find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
 [[ "${actual_files[*]}" == "${expected_files[*]}" ]] || die "Release directory has missing or extra files"
@@ -168,14 +171,14 @@ mapfile -t actual_files < <(find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 -type f 
   die "Release directory contains a link or non-regular entry"
 
 for variant in gmsRelease fossRelease; do
-  asset="$(node -e 'const a=require(process.argv[1]).assets.find(v=>v.variant===process.argv[2]);if(!a)process.exit(1);process.stdout.write(a.signed_asset)' "$MANIFEST" "$variant")"
+  asset="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const a=m.assets.find(v=>v.variant===process.argv[2]);if(!a)process.exit(1);process.stdout.write(a.signed_asset)' "$MANIFEST" "$variant")"
   apk="$RELEASE_DIR/$asset"
-  expected_sha="$(node -e 'process.stdout.write(require(process.argv[1]).assets.find(v=>v.variant===process.argv[2]).signed_sha256)' "$MANIFEST" "$variant")"
+  expected_sha="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.assets.find(v=>v.variant===process.argv[2]).signed_sha256)' "$MANIFEST" "$variant")"
   [[ "$(sha256sum "$apk" | awk '{print $1}')" == "$expected_sha" ]] || die "$variant digest mismatch"
   [[ "$(single_signer "$apk")" == "$CERTIFICATE" ]] || die "$variant signer mismatch"
   [[ "$($APKANALYZER manifest application-id "$apk")" == "$PACKAGE_ID" ]] || die "$variant package mismatch"
-  expected_code="$(node -e 'process.stdout.write(String(require(process.argv[1]).assets.find(v=>v.variant===process.argv[2]).version_code))' "$MANIFEST" "$variant")"
-  expected_name="$(node -e 'process.stdout.write(require(process.argv[1]).assets.find(v=>v.variant===process.argv[2]).version_name)' "$MANIFEST" "$variant")"
+  expected_code="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(m.assets.find(v=>v.variant===process.argv[2]).version_code))' "$MANIFEST" "$variant")"
+  expected_name="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.assets.find(v=>v.variant===process.argv[2]).version_name)' "$MANIFEST" "$variant")"
   [[ "$($APKANALYZER manifest version-code "$apk")" == "$expected_code" &&
      "$($APKANALYZER manifest version-name "$apk")" == "$expected_name" ]] || die "$variant version mismatch"
   validate_payload "$apk"
@@ -183,20 +186,25 @@ done
 
 remote_json="$(gh release view "$TAG" --repo "$REPOSITORY" --json tagName,targetCommitish,isPrerelease)"
 node -e '
-  const r=JSON.parse(process.argv[1]), m=require(process.argv[2]);
+  const r=JSON.parse(process.argv[1]);
+  const m=JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"));
   if (r.tagName!==m.release_tag || r.targetCommitish!==m.local_sha || r.isPrerelease!==m.prerelease) process.exit(1);
 ' "$remote_json" "$MANIFEST" || die "Remote release identity differs from the manifest"
 
 git -C "$REPO_ROOT" fetch --no-tags origin "+refs/heads/release/version-ledger:refs/arcp-version-ledger/verify" \
   "+$LOCAL_SHA:refs/arcp-release-sources/$LOCAL_SHA" >/dev/null
-git -C "$REPO_ROOT" show refs/arcp-version-ledger/verify:ledger.json > "$RELEASE_DIR/.ledger.verify"
+LEDGER_VERIFY="$(mktemp /tmp/arcp-release-ledger.XXXXXX.json)"
+git -C "$REPO_ROOT" show refs/arcp-version-ledger/verify:ledger.json > "$LEDGER_VERIFY"
 node -e '
-  const ledger=require(process.argv[1]), m=require(process.argv[2]);
+  const fs=require("fs");
+  const ledger=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+  const m=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));
   const e=ledger.entries.find(v=>v.release_tag===m.release_tag);
   if (!e || e.channel!==m.channel || e.upstream_sha!==m.upstream_sha || e.local_sha!==m.local_sha ||
       !m.assets.every(a=>a.version_code===e.version_code)) process.exit(1);
-' "$RELEASE_DIR/.ledger.verify" "$MANIFEST" || die "Release is not bound to the version ledger"
-rm -f "$RELEASE_DIR/.ledger.verify"
+' "$LEDGER_VERIFY" "$MANIFEST" || die "Release is not bound to the version ledger"
+rm -f -- "$LEDGER_VERIFY"
+LEDGER_VERIFY=""
 
 TEMP_DIR="$(mktemp -d /tmp/arcp-release-verify.XXXXXX)"
 git -C "$REPO_ROOT" archive "$LOCAL_SHA" | tar -x -C "$TEMP_DIR"
@@ -226,7 +234,7 @@ done
 printf 'VERIFIED: %s channel=%s local=%s upstream=%s\n' "$TAG" "$CHANNEL" "$LOCAL_SHA" "$UPSTREAM_SHA"
 [[ "$COMMAND" != verify && "$COMMAND" != download ]] || exit 0
 
-asset="$(node -e 'process.stdout.write(require(process.argv[1]).assets.find(v=>v.variant===process.argv[2]).signed_asset)' "$MANIFEST" "$VARIANT")"
+asset="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.assets.find(v=>v.variant===process.argv[2]).signed_asset)' "$MANIFEST" "$VARIANT")"
 APK="$RELEASE_DIR/$asset"
 CANDIDATE_CODE="$($APKANALYZER manifest version-code "$APK")"
 ARCP_PROFILE_VALIDATOR="$SCRIPT_DIR/validate-device-profiles.mjs" arcp_load_profile "$CONFIG_ROOT" "$DEVICE" ||
