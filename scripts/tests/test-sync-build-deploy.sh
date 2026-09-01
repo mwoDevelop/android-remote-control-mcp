@@ -69,6 +69,66 @@ test_channel_arguments() {
     bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --latest-stable --latest-edge"
   expect_failure "latest channel flags belong only to build" "sync accepts only" \
     bash -c "cd '$repo' && scripts/sync-build-deploy.sh sync --latest-edge"
+  expect_failure "unsigned release requires a latest channel" "requires --latest-stable or --latest-edge" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --variant gmsRelease --unsigned-release"
+  expect_failure "unsigned release rejects debug variants" "accepts only gmsRelease or fossRelease" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --latest-edge --variant gmsDebug --unsigned-release"
+  expect_failure "unsigned release rejects skipped mandatory gates" "does not allow --skip-e2e-compile" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --latest-edge --variant fossRelease --unsigned-release --skip-e2e-compile"
+  expect_failure "expected source SHA is a guard not a selector" "requires --latest-stable or --latest-edge" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --expected-source-sha 0123456789abcdef0123456789abcdef01234567"
+  expect_failure "expected source SHA must be full hexadecimal" "40-character hexadecimal" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh channel-info --latest-edge --expected-source-sha develop"
+  expect_failure "arbitrary developer channel remains unsupported" "Unknown argument: --latest-develop" \
+    bash -c "cd '$repo' && scripts/sync-build-deploy.sh build --latest-develop --variant gmsRelease"
+}
+
+test_expected_source_sha_guard() {
+  local output status
+  eval "$(sed -n '/^assert_expected_source_sha() {/,/^}/p' "$SOURCE_SCRIPT")"
+  die() { printf 'ERROR: %s\n' "$*" >&2; return 1; }
+  EXPECTED_SOURCE_SHA=0123456789abcdef0123456789abcdef01234567
+  assert_expected_source_sha "$EXPECTED_SOURCE_SHA"
+  set +e
+  output="$(assert_expected_source_sha ffffffffffffffffffffffffffffffffffffffff 2>&1)"
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$output" == *'does not match --expected-source-sha'* ]]
+  pass "expected source SHA guard fails closed on channel drift"
+}
+
+test_channel_build_secret_boundary() {
+  local output status
+  eval "$(sed -n '/^assert_channel_build_secretless() {/,/^}/p' "$SOURCE_SCRIPT")"
+  die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+  unset NGROK_AUTHTOKEN RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS \
+    RELEASE_KEY_PASSWORD GH_TOKEN GITHUB_TOKEN
+  assert_channel_build_secretless
+  NGROK_AUTHTOKEN=must-not-reach-upstream
+  set +e
+  output="$(assert_channel_build_secretless 2>&1)"
+  status=$?
+  set -e
+  unset NGROK_AUTHTOKEN
+  [[ $status -ne 0 && "$output" == *'NGROK_AUTHTOKEN'* ]]
+  pass "upstream channel build rejects ngrok and signing secrets"
+}
+
+test_unsigned_apk_metadata() {
+  local metadata
+  eval "$(sed -n '/^apk_package_metadata() {/,/^}/p' "$SOURCE_SCRIPT")"
+  resolve_android_tool() { printf fake_apkanalyzer; }
+  fake_apkanalyzer() {
+    case "$2" in
+      application-id) printf 'com.danielealbano.androidremotecontrolmcp\n' ;;
+      version-code) printf '123\n' ;;
+      version-name) printf '1.2.3\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  metadata="$(apk_package_metadata unsigned.apk)"
+  [[ "$metadata" == $'com.danielealbano.androidremotecontrolmcp\t123\t1.2.3' ]]
+  pass "unsigned APK metadata does not require a signing certificate"
 }
 
 test_latest_stable_selection() {
@@ -439,6 +499,9 @@ test_apksigner_digest_compatibility() {
 
 test_help
 test_channel_arguments
+test_expected_source_sha_guard
+test_channel_build_secret_boundary
+test_unsigned_apk_metadata
 test_latest_stable_selection
 test_go_toolchain_bootstrap
 test_maven_toolchain_bootstrap

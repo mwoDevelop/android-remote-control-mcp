@@ -24,6 +24,8 @@ CLOUDFLARED_REF=""
 NGROK_REF=""
 LATEST_STABLE=false
 LATEST_EDGE=false
+UNSIGNED_RELEASE=false
+EXPECTED_SOURCE_SHA=""
 SKIP_E2E=false
 COMMAND="${1:-}"
 shift || true
@@ -36,7 +38,10 @@ Usage:
                                       [--cloudflared-ref <tag-or-origin/ref>]
                                       [--ngrok-ref <origin/ref>] --apply
   scripts/sync-build-deploy.sh build  [--variant gmsDebug|fossDebug|gmsRelease|fossRelease]
-                                      [--latest-stable|--latest-edge] [--skip-e2e-compile]
+                                      [--latest-stable|--latest-edge] [--expected-source-sha <sha>]
+                                      [--unsigned-release] [--skip-e2e-compile]
+  scripts/sync-build-deploy.sh channel-info (--latest-stable|--latest-edge)
+                                      [--expected-source-sha <sha>]
   scripts/sync-build-deploy.sh deploy --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <apk> [--serial <adb-serial>] --apply
   scripts/sync-build-deploy.sh all    --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> [--variant ...] [--serial <adb-serial>] --apply
   scripts/sync-build-deploy.sh rollback --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <known-good-apk> [--serial <adb-serial>] --apply
@@ -47,6 +52,8 @@ Safety contract:
   all validates, builds and deploys the already checked-out commit; it never fetches or merges.
   build --latest-stable/--latest-edge fetches the selected official upstream tag and builds it
   in an isolated temporary worktree; it never changes main or deploys the artifact.
+  --unsigned-release is limited to latest-channel Release builds. It runs the secretless upstream
+  mirror qualification profile and emits a portable pre-sign manifest for trusted post-build signing.
   sync/deploy/all/rollback print a preview and make no changes without literal --apply.
   Deployment never uninstalls an app, bypasses signature checks, grants Restricted Settings,
   automates Shizuku, or changes Qustodio. The historical debug proof uses scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh.
@@ -57,7 +64,8 @@ Examples:
   scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply
   scripts/sync-build-deploy.sh build --variant gmsDebug
   scripts/sync-build-deploy.sh build --latest-stable --variant gmsDebug
-  scripts/sync-build-deploy.sh build --latest-edge --variant gmsDebug
+  scripts/sync-build-deploy.sh build --latest-edge --variant gmsRelease --unsigned-release
+  scripts/sync-build-deploy.sh channel-info --latest-edge --expected-source-sha 0123456789abcdef0123456789abcdef01234567
   scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial SERIAL --apply
 EOF
 }
@@ -83,6 +91,12 @@ parse_args() {
       --ngrok-ref) (($# >= 2)) || die "--ngrok-ref requires a value"; NGROK_REF="$2"; shift 2 ;;
       --latest-stable) LATEST_STABLE=true; shift ;;
       --latest-edge) LATEST_EDGE=true; shift ;;
+      --unsigned-release) UNSIGNED_RELEASE=true; shift ;;
+      --expected-source-sha)
+        (($# >= 2)) || die "--expected-source-sha requires a value"
+        EXPECTED_SOURCE_SHA="${2,,}"
+        shift 2
+        ;;
       --skip-e2e-compile) SKIP_E2E=true; shift ;;
       --apply) APPLY=true; shift ;;
       --help|-h) usage; exit 0 ;;
@@ -94,18 +108,23 @@ parse_args() {
 validate_contract() {
   [[ "$LATEST_STABLE" == false || "$LATEST_EDGE" == false ]] ||
     die "--latest-stable and --latest-edge are mutually exclusive"
+  [[ -z "$EXPECTED_SOURCE_SHA" || "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+    die "--expected-source-sha must be a full 40-character hexadecimal commit SHA"
+  [[ -z "$EXPECTED_SOURCE_SHA" || "$LATEST_STABLE" == true || "$LATEST_EDGE" == true ]] ||
+    die "--expected-source-sha requires --latest-stable or --latest-edge"
   case "$COMMAND" in
     check)
       [[ -n "$DEVICE" ]] || die "check requires --device"
       [[ "$APPLY" == false ]] || die "check does not accept --apply"
       [[ "$VARIANT" == "$DEFAULT_VARIANT" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
          -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false &&
-         "$SKIP_E2E" == false ]] ||
+         "$UNSIGNED_RELEASE" == false && -z "$EXPECTED_SOURCE_SHA" && "$SKIP_E2E" == false ]] ||
         die "check received an option that belongs to another command"
       ;;
     sync)
       [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
-         "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$SKIP_E2E" == false ]] ||
+         "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$UNSIGNED_RELEASE" == false &&
+         -z "$EXPECTED_SOURCE_SHA" && "$SKIP_E2E" == false ]] ||
         die "sync accepts only upstream refs and --apply"
       [[ "$UPSTREAM_REF" =~ ^upstream/[A-Za-z0-9._/-]+$ ]] || die "--upstream-ref must name a ref below upstream/"
       [[ -z "$CLOUDFLARED_REF" || "$CLOUDFLARED_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Invalid --cloudflared-ref"
@@ -115,18 +134,35 @@ validate_contract() {
     build)
       [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
          -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$APPLY" == false ]] ||
-        die "build accepts only --variant, one latest channel flag and --skip-e2e-compile"
+        die "build accepts only --variant, channel build options and --skip-e2e-compile"
+      if [[ "$UNSIGNED_RELEASE" == true ]]; then
+        [[ "$LATEST_STABLE" == true || "$LATEST_EDGE" == true ]] ||
+          die "--unsigned-release requires --latest-stable or --latest-edge"
+        [[ "$VARIANT" == gmsRelease || "$VARIANT" == fossRelease ]] ||
+          die "--unsigned-release accepts only gmsRelease or fossRelease"
+        [[ "$SKIP_E2E" == false ]] || die "--unsigned-release does not allow --skip-e2e-compile"
+      fi
+      ;;
+    channel-info)
+      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
+         "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" &&
+         "$APPLY" == false && "$UNSIGNED_RELEASE" == false && "$SKIP_E2E" == false ]] ||
+        die "channel-info accepts only one latest channel flag and --expected-source-sha"
+      [[ "$LATEST_STABLE" == true || "$LATEST_EDGE" == true ]] ||
+        die "channel-info requires --latest-stable or --latest-edge"
       ;;
     deploy|rollback)
       [[ -n "$DEVICE" && -n "$ARTIFACT" ]] || die "$COMMAND requires --device and --artifact"
       [[ "$VARIANT" == "$DEFAULT_VARIANT" && "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" &&
-         -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$SKIP_E2E" == false ]] ||
+         -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false &&
+         "$UNSIGNED_RELEASE" == false && -z "$EXPECTED_SOURCE_SHA" && "$SKIP_E2E" == false ]] ||
         die "$COMMAND received an option that belongs to another command"
       ;;
     all)
       [[ -n "$DEVICE" ]] || die "all requires --device"
       [[ -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" &&
-         -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$SKIP_E2E" == false ]] ||
+         -z "$NGROK_REF" && "$LATEST_STABLE" == false && "$LATEST_EDGE" == false &&
+         "$UNSIGNED_RELEASE" == false && -z "$EXPECTED_SOURCE_SHA" && "$SKIP_E2E" == false ]] ||
         die "all does not accept --artifact, --upstream-ref or --skip-e2e-compile"
       ;;
     help|--help|-h|"") usage; exit 0 ;;
@@ -407,15 +443,33 @@ resolve_upstream_channel() {
   printf '%s\t%s\n' "$label" "$sha"
 }
 
+assert_expected_source_sha() {
+  local actual_sha="${1,,}"
+  [[ -z "$EXPECTED_SOURCE_SHA" || "$actual_sha" == "$EXPECTED_SOURCE_SHA" ]] ||
+    die "Resolved upstream source $actual_sha does not match --expected-source-sha $EXPECTED_SOURCE_SHA"
+}
+
+channel_info() {
+  local channel label source_sha
+  if [[ "$LATEST_STABLE" == true ]]; then channel=stable; else channel=edge; fi
+  IFS=$'\t' read -r label source_sha < <(resolve_upstream_channel "$channel")
+  assert_expected_source_sha "$source_sha"
+  node -e '
+    const [channel,label,sourceSha]=process.argv.slice(1);
+    process.stdout.write(JSON.stringify({schema_version:1,channel,source_label:label,source_sha:sourceSha})+"\n");
+  ' "$channel" "$label" "$source_sha"
+}
+
 build_upstream_channel() (
-  local channel label source_sha short_sha channel_temp_dir channel_worktree
-  local source_apk output_dir output_apk output_manifest sha metadata qualified
+  local channel label source_sha short_sha channel_temp_dir channel_worktree final_label final_sha
+  local source_apk output_dir output_apk output_manifest sha metadata qualified signed output_suffix manifest_type
   local -a child_args
   channel="$1"
   require_clean_worktree
   [[ "$(git -C "$REPO_ROOT" branch --show-current)" == "main" ]] ||
     die "channel builds must start from local main"
   IFS=$'\t' read -r label source_sha < <(resolve_upstream_channel "$channel")
+  assert_expected_source_sha "$source_sha"
   short_sha="${source_sha:0:12}"
   channel_temp_dir="$(mktemp -d "/tmp/arcp-$channel-build.XXXXXX")"
   channel_worktree="$channel_temp_dir/worktree"
@@ -436,11 +490,18 @@ build_upstream_channel() (
   if [[ "$SKIP_E2E" == true ]]; then qualified=false; fi
   child_args=(build --variant "$VARIANT")
   if [[ "$SKIP_E2E" == true ]]; then child_args+=(--skip-e2e-compile); fi
-  if ! ARCP_REPO_ROOT_OVERRIDE="$channel_worktree" \
+  if ! env -u NGROK_AUTHTOKEN -u RELEASE_KEYSTORE_BASE64 -u RELEASE_KEYSTORE_PASSWORD \
+    -u RELEASE_KEY_ALIAS -u RELEASE_KEY_PASSWORD -u GH_TOKEN -u GITHUB_TOKEN \
+    ARCP_REPO_ROOT_OVERRIDE="$channel_worktree" \
     ARCP_CHANNEL_BUILD=true \
+    ARCP_CHANNEL_UNSIGNED_RELEASE="$UNSIGNED_RELEASE" \
     "$SCRIPT_DIR/sync-build-deploy.sh" "${child_args[@]}"; then
     die "Latest $channel build failed for $label ($source_sha)"
   fi
+
+  IFS=$'\t' read -r final_label final_sha < <(resolve_upstream_channel "$channel")
+  [[ "$final_label" == "$label" && "$final_sha" == "$source_sha" ]] ||
+    die "Upstream $channel moved during the build: $label/$source_sha -> $final_label/$final_sha"
 
   variant_parts
   mapfile -t channel_apks < <(
@@ -449,22 +510,38 @@ build_upstream_channel() (
   ((${#channel_apks[@]} == 1)) || die "Expected exactly one $channel APK, found ${#channel_apks[@]}"
   source_apk="${channel_apks[0]}"
   output_dir="$REPO_ROOT/build/channels/$channel"
-  output_apk="$output_dir/android-remote-control-mcp-$channel-${VARIANT}-${short_sha}.apk"
-  output_manifest="$output_dir/manifest.json"
+  signed=true
+  output_suffix=""
+  manifest_type="upstream_channel_build"
+  if [[ "$UNSIGNED_RELEASE" == true ]]; then
+    signed=false
+    output_suffix="-unsigned"
+    manifest_type="upstream_channel_pre_sign"
+  fi
+  output_apk="$output_dir/android-remote-control-mcp-$channel-${VARIANT}-${short_sha}${output_suffix}.apk"
+  output_manifest="$output_dir/manifest-${VARIANT}-${short_sha}.json"
   mkdir -p "$output_dir"
   cp "$source_apk" "$output_apk"
   sha="$(sha256sum "$output_apk" | awk '{print $1}')"
-  metadata="$(apk_metadata "$output_apk")"
+  if [[ "$signed" == true ]]; then
+    metadata="$(apk_metadata "$output_apk")"
+  else
+    metadata="$(apk_package_metadata "$output_apk")"
+  fi
   node -e '
     const fs=require("fs");
-    const [out,channel,label,sourceSha,variant,qualified,apk,sha,metadata]=process.argv.slice(1);
+    const [out,type,channel,label,sourceSha,variant,qualified,signed,apk,sha,metadata]=process.argv.slice(1);
     const [applicationId,versionCode,versionName,certificateSha256]=metadata.split("\t");
-    fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"upstream_channel_build",
+    fs.writeFileSync(out,JSON.stringify({schema_version:2,type,
       created_at:new Date().toISOString(),channel,source_label:label,source_sha:sourceSha,variant,
-      qualified:qualified==="true",apk,sha256:sha,application_id:applicationId,
-      version_code:Number(versionCode),version_name:versionName,certificate_sha256:certificateSha256},null,2)+"\n");
-  ' "$output_manifest" "$channel" "$label" "$source_sha" "$VARIANT" "$qualified" \
-    "$(realpath "$output_apk")" "$sha" "$metadata"
+      source_repository:"https://github.com/danielealbano/android-remote-control-mcp",
+      qualified:qualified==="true",mandatory_gates_skipped:qualified!=="true",
+      qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source"},
+      signed:signed==="true",apk_asset:apk,raw_unsigned_sha256:signed==="true"?null:sha,
+      sha256:sha,application_id:applicationId,version_code:Number(versionCode),version_name:versionName,
+      certificate_sha256:certificateSha256||null},null,2)+"\n");
+  ' "$output_manifest" "$manifest_type" "$channel" "$label" "$source_sha" "$VARIANT" "$qualified" \
+    "$signed" "$(basename "$output_apk")" "$sha" "$metadata"
   printf 'Latest %s build complete: %s (%s)\nAPK: %s\nManifest: %s\n' \
     "$channel" "$label" "$source_sha" "$output_apk" "$output_manifest"
 )
@@ -571,10 +648,9 @@ certificate_digest() {
   printf '%s' "$digest"
 }
 
-apk_metadata() {
-  local apk="$1" analyzer signer app_id version_code version_name digest
+apk_package_metadata() {
+  local apk="$1" analyzer app_id version_code version_name
   analyzer="$(resolve_android_tool apkanalyzer)"
-  signer="$(resolve_android_tool apksigner)"
   app_id="$($analyzer manifest application-id "$apk")"
   version_code="$($analyzer manifest version-code "$apk")"
   version_name="$($analyzer manifest version-name "$apk")"
@@ -582,11 +658,18 @@ apk_metadata() {
     printf 'ERROR: APK package or version metadata cannot be read\n' >&2
     return 1
   fi
+  printf '%s\t%s\t%s\n' "$app_id" "$version_code" "$version_name"
+}
+
+apk_metadata() {
+  local apk="$1" signer metadata digest
+  signer="$(resolve_android_tool apksigner)"
+  metadata="$(apk_package_metadata "$apk")" || return 1
   if ! digest="$(certificate_digest "$signer" "$apk")"; then
     printf 'ERROR: APK is unsigned or its signing digest cannot be read\n' >&2
     return 1
   fi
-  printf '%s\t%s\t%s\t%s\n' "$app_id" "$version_code" "$version_name" "$digest"
+  printf '%s\t%s\t%s\t%s\n' "$metadata" "$digest"
 }
 
 write_build_manifest() {
@@ -607,8 +690,37 @@ write_build_manifest() {
   printf '%s' "$manifest"
 }
 
+write_unsigned_build_manifest() {
+  local apk="$1" qualified="$2" sha metadata manifest_dir manifest
+  sha="$(sha256sum "$apk" | awk '{print $1}')"
+  metadata="$(apk_package_metadata "$apk")" || return 1
+  manifest_dir="$REPO_ROOT/build/deployments"
+  mkdir -p "$manifest_dir"
+  manifest="$manifest_dir/pre-sign-${VARIANT}-${sha}.json"
+  node -e '
+    const fs=require("fs"); const [out,apk,sha,variant,qualified,gitSha,meta]=process.argv.slice(1);
+    const [applicationId,versionCode,versionName]=meta.split("\t");
+    fs.writeFileSync(out,JSON.stringify({schema_version:2,type:"qualified_unsigned_build",
+      created_at:new Date().toISOString(),git_sha:gitSha,variant,qualified:qualified==="true",
+      apk_asset:require("path").basename(apk),raw_unsigned_sha256:sha,application_id:applicationId,
+      version_code:Number(versionCode),version_name:versionName,certificate_sha256:null,
+      qualification:{profile:"upstream_mirror_secretless",ngrok_live_integration:"not_applicable_untrusted_source"},
+      mandatory_gates_skipped:qualified!=="true"},null,2)+"\n");
+  ' "$manifest" "$apk" "$sha" "$VARIANT" "$qualified" "$(git -C "$REPO_ROOT" rev-parse HEAD)" "$metadata"
+  printf '%s' "$manifest"
+}
+
+assert_channel_build_secretless() {
+  local variable
+  for variable in NGROK_AUTHTOKEN RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS \
+    RELEASE_KEY_PASSWORD GH_TOKEN GITHUB_TOKEN; do
+    [[ -z "${!variable:-}" ]] || die "Secret-bearing variable is forbidden in an upstream channel build: $variable"
+  done
+}
+
 build_variant() {
-  local ngrok_test_token
+  local ngrok_test_token manifest
+  local -a gradle_init_args=()
   require_command node
   variant_parts
   cd "$REPO_ROOT"
@@ -620,17 +732,29 @@ build_variant() {
   prepare_host_cloudflared
   prepare_native_tunnel_payload
   ./gradlew ktlintCheck detekt
-  ngrok_test_token="$(resolve_ngrok_test_token)"
-  NGROK_AUTHTOKEN="$ngrok_test_token" ./gradlew :app:test :privacy:test :privacy-benchmark:test
+  if [[ "${ARCP_CHANNEL_BUILD:-false}" == true ]]; then
+    assert_channel_build_secretless
+    gradle_init_args=(--init-script "$SCRIPT_DIR/gradle/upstream-mirror-secretless.init.gradle")
+    ./gradlew "${gradle_init_args[@]}" :app:test :privacy:test :privacy-benchmark:test
+  else
+    ngrok_test_token="$(resolve_ngrok_test_token)"
+    NGROK_AUTHTOKEN="$ngrok_test_token" ./gradlew :app:test :privacy:test :privacy-benchmark:test
+  fi
   if [[ "$SKIP_E2E" == false ]]; then ./gradlew :e2e-tests:compileTestKotlin; fi
   ./gradlew "assemble${VARIANT^}"
   mapfile -t apks < <(find "app/build/outputs/apk/$FLAVOR/$BUILD_TYPE" -maxdepth 1 -type f -name '*.apk' | sort)
   ((${#apks[@]} == 1)) || die "Expected exactly one APK for $VARIANT, found ${#apks[@]}"
   validate_tunnel_payload "${apks[0]}"
-  validate_admin_ui_manifest "${apks[0]}"
-  local manifest
-  manifest="$(write_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")" ||
-    die "Failed to create a qualified build manifest"
+  if [[ "${ARCP_CHANNEL_BUILD:-false}" != true ]]; then
+    validate_admin_ui_manifest "${apks[0]}"
+  fi
+  if [[ "${ARCP_CHANNEL_UNSIGNED_RELEASE:-false}" == true ]]; then
+    manifest="$(write_unsigned_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")" ||
+      die "Failed to create an unsigned pre-sign build manifest"
+  else
+    manifest="$(write_build_manifest "${apks[0]}" "$([[ "$SKIP_E2E" == false ]] && printf true || printf false)")" ||
+      die "Failed to create a qualified build manifest"
+  fi
   printf 'Build complete: %s\nManifest: %s\n' "${apks[0]}" "$manifest"
   [[ "$SKIP_E2E" == false ]] || printf 'UNQUALIFIED: mandatory E2E compile gate was skipped; deployment will refuse this artifact.\n' >&2
   BUILT_ARTIFACT="$(realpath "${apks[0]}")"
@@ -776,6 +900,7 @@ case "$COMMAND" in
       build_variant
     fi
     ;;
+  channel-info) channel_info ;;
   deploy) deploy_artifact ;;
   all)
     if [[ "$APPLY" == false ]]; then
