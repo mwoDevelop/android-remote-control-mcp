@@ -117,6 +117,7 @@ test_cli_and_workflow_contracts() {
     "$REPO_ROOT/.github/workflows/upstream-channel-release.yml")"
   [[ "$build_job" == *'contents: read'* && "$build_job" == *'persist-credentials: false'* ]]
   [[ "$build_job" != *'secrets.'* && "$build_job" == *'--latest-$CHANNEL'* ]]
+  [[ "$build_job" == *'git remote add upstream'* && "$build_job" == *'git remote set-url --push upstream DISABLED'* ]]
   [[ "$(rg -c 'NGROK_AUTHTOKEN' "$REPO_ROOT/scripts/gradle/upstream-mirror-secretless.init.gradle")" -eq 0 ]]
   rg -q 'NgrokTunnelIntegrationTest' "$REPO_ROOT/scripts/gradle/upstream-mirror-secretless.init.gradle"
   rg -q 'https://api.github.com/repos/danielealbano/android-remote-control-mcp/releases/latest' \

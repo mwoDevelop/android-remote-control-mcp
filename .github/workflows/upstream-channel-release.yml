@@ -71,6 +71,17 @@ jobs:
             exit 1
           fi
 
+      - name: Configure official upstream source remote
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_url='https://github.com/danielealbano/android-remote-control-mcp.git'
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "$upstream_url"
+          git remote set-url --push upstream DISABLED
+          [[ "$(git remote get-url upstream)" == "$upstream_url" ]]
+          [[ "$(git remote get-url --push upstream)" == DISABLED ]]
+
       - name: Build qualified unsigned GMS and FOSS Release APKs
         id: build
         shell: bash
