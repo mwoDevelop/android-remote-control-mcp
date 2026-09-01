@@ -64,6 +64,19 @@ jobs:
       - name: Run detekt
         run: ./gradlew detekt
 
+      - name: Validate release automation shell and contracts
+        run: |
+          bash -n scripts/sync-build-deploy.sh \
+            scripts/sign-upstream-channel-release.sh \
+            scripts/publish-upstream-channel-release.sh \
+            scripts/tests/test-sync-build-deploy.sh \
+            scripts/tests/test-upstream-channel-release.sh
+          scripts/tests/test-sync-build-deploy.sh
+          scripts/tests/test-upstream-channel-release.sh
+
+      - name: Validate GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
   test-unit:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest

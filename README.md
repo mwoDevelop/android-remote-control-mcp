@@ -16,6 +16,7 @@ The app runs directly on your Android device (or emulator) and exposes an HTTP s
 - [Demo](#demo)
 - [Features](#features)
 - [Install](#install)
+- [Release Channels](#release-channels)
 - [Setup](#setup)
 - [Privacy Mode](#privacy-mode)
 - [Integrations](#integrations)
@@ -143,6 +144,24 @@ make install  # installs on connected device/emulator
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full build requirements and instructions.
+
+---
+
+## Release Channels
+
+This fork keeps three release streams separate:
+
+- fork releases (`v*` and `edge`) contain the reviewed fork features;
+- official-upstream stable mirrors (`upstream-vMAJOR.MINOR.PATCH`) are built through `--latest-stable`;
+- the official-upstream rolling mirror (`upstream-edge`) is built through `--latest-edge`.
+
+Both mirror streams are always GitHub pre-releases and contain only GMS/FOSS Release APKs from the selected official
+upstream source. They are built without signing or account secrets, then signed and independently verified in a
+separate trusted job. The workflow never deploys a mirror APK to a managed device and does not support arbitrary
+developer branches.
+
+See [Official upstream channel releases](docs/UPSTREAM_CHANNEL_RELEASES.md) for local commands, provenance, GitHub
+configuration, activation and failure behavior.
 
 ---
 
