@@ -56,7 +56,7 @@ make_fake_android_tools() {
     '    ;;' \
     '  verify)' \
     '    printf "Verified using v2 scheme (APK Signature Scheme v2): true\\n"' \
-    '    printf "Signer #1 certificate SHA-256 digest: %s\\n" "${FAKE_CERTIFICATE_SHA256:?}"' \
+    '    printf "  Signer #1 certificate SHA-256 digest: %s\\n" "${FAKE_CERTIFICATE_SHA256:?}"' \
     '    ;;' \
     '  *) exit 1 ;;' \
     'esac' >"$FAKE_BIN/apksigner"
