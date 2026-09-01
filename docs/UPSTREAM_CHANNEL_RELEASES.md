@@ -12,6 +12,18 @@ The mirror workflow publishes qualified APKs from the official
 | upstream stable mirror | newest strict official `vMAJOR.MINOR.PATCH` | `upstream-vMAJOR.MINOR.PATCH` | immutable pre-release |
 | upstream edge mirror | official moving `edge` tag | `upstream-edge` | rolling pre-release |
 
+Current accepted mirrors (2026-09-01):
+
+- [`upstream-v1.12.0`](https://github.com/mwoDevelop/android-remote-control-mcp/releases/tag/upstream-v1.12.0),
+  official source `3777403d148283c5a18a3e8122ff819da4eed808`;
+- [`upstream-edge`](https://github.com/mwoDevelop/android-remote-control-mcp/releases/tag/upstream-edge), official source
+  `16f39717ce0969aa81a4ec132ba1cad861ba46cc`.
+
+Both were downloaded and independently verified after publication. The stable and edge publication paths also
+returned a verified same-source `NO-OP` when reapplied, without replacing their assets. Full run, artifact and digest
+evidence is recorded in
+[`Plan 72`](plans/72_upstream_channel_github_releases_20260901150851.md).
+
 The mirror build job has read-only repository access, persists no checkout credential and receives no ngrok, signing,
 device or publishing secret. It invokes the existing channel selectors:
 
@@ -42,7 +54,8 @@ separate SHA-256 values for raw unsigned, zipaligned and signed content.
 
 ## GitHub configuration
 
-Create a protected GitHub Environment named `upstream-releases`. Configure these secrets there by name only:
+This repository uses the protected GitHub Environment `upstream-releases`, restricted to deployments from `main`.
+When recreating the environment, configure these secrets there by name only:
 
 - `RELEASE_KEYSTORE_BASE64`
 - `RELEASE_KEYSTORE_PASSWORD`
