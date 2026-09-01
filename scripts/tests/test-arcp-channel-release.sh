@@ -129,6 +129,14 @@ test_workflow_contract() {
   pass 'workflow separates static, live and signing trust boundaries'
 }
 
+test_artifact_json_loading_contract() {
+  local artifact_script="$REPO_ROOT/scripts/arcp-release-artifact.sh"
+  [[ -f "$artifact_script" ]]
+  ! grep -Eq 'require\(process\.argv\[[12]\]\)' "$artifact_script"
+  grep -Fq 'JSON.parse(fs.readFileSync(process.argv[1],"utf8"))' "$artifact_script"
+  pass 'release verification parses JSON content independently of filename extension'
+}
+
 test_sign_and_dry_run() {
   local input="$WORK_ROOT/input" output="$WORK_ROOT/output" dry
   make_inputs "$input"
@@ -189,6 +197,7 @@ make_fake_tools
 touch "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 chmod 600 "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 test_workflow_contract
+test_artifact_json_loading_contract
 test_sign_and_dry_run
 test_relative_signing_paths
 test_failures
