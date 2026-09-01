@@ -42,6 +42,11 @@ if git --git-dir="$remote" show-ref --verify --quiet refs/heads/release/version-
 fi
 pass "preview allocates no remote version code"
 
+suffix_preview="$(cd "$repo" && ARCP_EXPECTED_ORIGIN_URL="${remote%.git}" \
+  scripts/arcp-version-ledger.sh allocate "${common[@]}")"
+[[ "$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).version_code))' "$suffix_preview")" == 21000000 ]]
+pass "ledger treats an optional .git suffix as the same exact repository"
+
 first="$(cd "$repo" && ARCP_EXPECTED_ORIGIN_URL="$remote" scripts/arcp-version-ledger.sh allocate "${common[@]}" --apply)"
 first_code="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).version_code))' "$first")"
 first_tag="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).release_tag)' "$first")"

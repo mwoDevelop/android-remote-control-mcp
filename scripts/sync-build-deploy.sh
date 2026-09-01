@@ -482,9 +482,13 @@ assert_expected_source_sha() {
 }
 
 verify_owner_remote() {
-  local fetch_url
+  local fetch_url normalized_fetch normalized_expected
   fetch_url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null)" || die "Missing origin remote"
-  [[ "$fetch_url" == "$OWNER_REPOSITORY" ]] || die "origin fetch URL is not the owner repository"
+  normalized_fetch="${fetch_url%/}"
+  normalized_fetch="${normalized_fetch%.git}"
+  normalized_expected="${OWNER_REPOSITORY%/}"
+  normalized_expected="${normalized_expected%.git}"
+  [[ "$normalized_fetch" == "$normalized_expected" ]] || die "origin fetch URL is not the owner repository"
 }
 
 resolve_local_channel() {

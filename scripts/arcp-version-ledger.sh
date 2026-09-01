@@ -63,7 +63,12 @@ done
 [[ "$COMMAND" == allocate || "$APPLY" == false ]] || die "lookup does not accept --apply"
 
 actual_origin="$(git -C "$REPO_ROOT" remote get-url "$REMOTE" 2>/dev/null)" || die "Missing origin remote"
-[[ "$actual_origin" == "$EXPECTED_ORIGIN_URL" ]] || die "origin URL is not the expected owner repository"
+normalized_actual_origin="${actual_origin%/}"
+normalized_actual_origin="${normalized_actual_origin%.git}"
+normalized_expected_origin="${EXPECTED_ORIGIN_URL%/}"
+normalized_expected_origin="${normalized_expected_origin%.git}"
+[[ "$normalized_actual_origin" == "$normalized_expected_origin" ]] ||
+  die "origin URL is not the expected owner repository"
 
 git -C "$REPO_ROOT" update-ref -d "$LEDGER_REF" >/dev/null 2>&1 || true
 ledger_exists=false

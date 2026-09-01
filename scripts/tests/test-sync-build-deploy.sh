@@ -97,6 +97,33 @@ test_expected_source_sha_guard() {
   pass "expected source SHA guard fails closed on channel drift"
 }
 
+test_github_checkout_origin_without_dot_git() {
+  local output status
+  (
+    eval "$(sed -n '/^verify_owner_remote() {/,/^}/p' "$SOURCE_SCRIPT")"
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    git() { printf '%s\n' 'https://github.com/mwoDevelop/android-remote-control-mcp'; }
+    REPO_ROOT=.
+    OWNER_REPOSITORY=https://github.com/mwoDevelop/android-remote-control-mcp.git
+    verify_owner_remote
+  )
+  set +e
+  output="$(
+  (
+    eval "$(sed -n '/^verify_owner_remote() {/,/^}/p' "$SOURCE_SCRIPT")"
+    die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+    git() { printf '%s\n' 'https://github.com/mwoDevelop/android-remote-control-mcp-attacker'; }
+    REPO_ROOT=.
+    OWNER_REPOSITORY=https://github.com/mwoDevelop/android-remote-control-mcp.git
+    verify_owner_remote
+  ) 2>&1
+  )"
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$output" == *'origin fetch URL is not the owner repository'* ]]
+  pass "GitHub Actions origin URL without .git is accepted while near-match repositories fail closed"
+}
+
 test_channel_build_secret_boundary() {
   local output status
   eval "$(sed -n '/^assert_channel_build_secretless() {/,/^}/p' "$SOURCE_SCRIPT")"
@@ -537,6 +564,7 @@ test_apksigner_digest_compatibility() {
 test_help
 test_channel_arguments
 test_expected_source_sha_guard
+test_github_checkout_origin_without_dot_git
 test_channel_build_secret_boundary
 test_unsigned_apk_metadata
 test_secretless_test_retry_is_bounded
