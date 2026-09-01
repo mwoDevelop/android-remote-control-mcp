@@ -1,4 +1,4 @@
-<!-- IMPLEMENTED AND TESTED LOCALLY — no GitHub Release mutation has been performed. -->
+<!-- IMPLEMENTED, PUSHED AND REMOTELY ACCEPTED — mirror APKs were not deployed to devices. -->
 <!-- Never commit keystores, signing passwords, tokens, generated properties or release credentials. -->
 
 # Plan 72 — Publish qualified stable and edge builds from the official upstream
@@ -8,9 +8,10 @@ consume the same channel resolution and build entrypoint as local use: `build --
 `vMAJOR.MINOR.PATCH` tag and `build --latest-edge` for the official moving `edge` tag. It must not add an arbitrary
 `develop` or branch-name channel.
 
-## Implementation status — 2026-09-01
+## Implementation and acceptance status — 2026-09-01
 
-Implemented in local commits `15fed32`, `c3a81f9` and `05f77a4`:
+Implemented and pushed in commits beginning with `15fed32`, with remote-run corrections through `35eb03e` and the
+host-independent bootstrap test in `5338668`:
 
 - secretless unsigned Release builds through `--latest-stable` / `--latest-edge`, with
   `--expected-source-sha` as a fail-closed guard and no arbitrary developer channel;
@@ -22,7 +23,7 @@ Implemented in local commits `15fed32`, `c3a81f9` and `05f77a4`:
   permissions, protected signing environment and an explicit repository-variable activation switch;
 - root and detailed release-channel documentation plus CI execution of shell/contract/actionlint validation.
 
-Local acceptance evidence:
+Acceptance evidence:
 
 - 32 build/deploy contract tests and 12 release-workflow tests pass for stable/edge, GMS/FOSS, wrong certificate,
   source drift, unsupported branch, extra/damaged/missing assets, stable idempotence and rolling edge replacement;
@@ -33,10 +34,26 @@ Local acceptance evidence:
 - real edge source `16f39717ce0969aa81a4ec132ba1cad861ba46cc` produced a qualified unsigned `gmsRelease` APK;
 - a confirmed upstream server-start race failed once in a repeated stable test run. The workflow now retries the same
   secretless Gradle task at most once; deterministic double failures remain fatal and the retry is recorded.
-
-Deliberately pending: push/remote Actions execution, configuration of the protected Environment/secrets/variables,
-and real `upstream-edge`/stable GitHub Release creation, download and rerun. Those are external mutations and require
-explicit authorization. No APK was deployed to a phone.
+- the protected GitHub Environment `upstream-releases` contains the four signing secrets by name, the public
+  certificate/activation variables, and a deployment branch policy restricted to `main`;
+- [stable workflow run `33531282998`](https://github.com/mwoDevelop/android-remote-control-mcp/actions/runs/33531282998)
+  completed both jobs and published immutable pre-release
+  [`upstream-v1.12.0`](https://github.com/mwoDevelop/android-remote-control-mcp/releases/tag/upstream-v1.12.0);
+- [edge workflow run `33535264145`](https://github.com/mwoDevelop/android-remote-control-mcp/actions/runs/33535264145)
+  completed both jobs and published rolling pre-release
+  [`upstream-edge`](https://github.com/mwoDevelop/android-remote-control-mcp/releases/tag/upstream-edge);
+- both releases contain exactly GMS APK, FOSS APK and `release-manifest.json`, are non-draft pre-releases, and use
+  signer SHA-256 `[REDACTED_RESOURCE_ID]`;
+- stable signed APK SHA-256 values are `[REDACTED_RESOURCE_ID]`
+  (GMS) and `[REDACTED_RESOURCE_ID]` (FOSS); edge values are
+  `[REDACTED_RESOURCE_ID]` (GMS) and
+  `[REDACTED_RESOURCE_ID]` (FOSS);
+- the edge assets were downloaded without a GitHub token and independently revalidated. Real same-source apply runs
+  for stable and edge both returned verified `NO-OP`, proving publication-layer idempotence without rebuilding or
+  replacing either release;
+- the remote runs exposed and fixed missing checkout remotes, missing Rust Android targets, an incorrect first secret
+  upload invocation, indented `apksigner` output and the missing publisher-job upstream remote. No APK was deployed to a
+  phone because pure-upstream mirror publication is intentionally separate from managed-device delivery.
 
 ## Current verified state
 
@@ -111,97 +128,98 @@ Each release contains:
 
 ## User Story 1 — Separate unsigned channel build from trusted signing
 
-- [ ] Extend the channel builder with an internal/explicit unsigned Release output mode. It must still run lint,
+- [x] Extend the channel builder with an internal/explicit unsigned Release output mode. It must still run lint,
   detekt, unit/integration tests, E2E compilation and native payload checks before returning an unsigned APK.
-- [ ] Keep `build --latest-stable` and `build --latest-edge` as the public selectors. Do not introduce a second tag or
+- [x] Keep `build --latest-stable` and `build --latest-edge` as the public selectors. Do not introduce a second tag or
   branch resolution implementation.
-- [ ] Add `--expected-source-sha` as a guard, not a source selector. It is valid only together with one latest-channel
+- [x] Add `--expected-source-sha` as a guard, not a source selector. It is valid only together with one latest-channel
   flag, and it compares the freshly resolved channel both before and after the build.
-- [ ] Run channel tests without `NGROK_AUTHTOKEN`, excluding only the live ngrok integration class through a trusted
+- [x] Run channel tests without `NGROK_AUTHTOKEN`, excluding only the live ngrok integration class through a trusted
   Gradle init script. Record `upstream_mirror_secretless` and the explicit non-applicable live test in provenance.
-- [ ] Record a pre-sign provenance manifest using metadata readable without a certificate: source label/SHA, variant,
+- [x] Record a pre-sign provenance manifest using metadata readable without a certificate: source label/SHA, variant,
   application ID, version code/name, unsigned APK SHA-256 and mandatory-gate status.
-- [ ] Make channel manifests variant- and source-specific instead of overwriting one `manifest.json`, for example
+- [x] Make channel manifests variant- and source-specific instead of overwriting one `manifest.json`, for example
   `manifest-gmsRelease-<short-sha>.json` and `manifest-fossRelease-<short-sha>.json`.
-- [ ] Add a trusted `sign-channel-artifact` operation that consumes an unsigned APK, its pre-sign manifest, an external
+- [x] Add a trusted `sign-channel-artifact` operation that consumes an unsigned APK, its pre-sign manifest, an external
   keystore path and an external properties/secret file. It must not execute code from the upstream worktree.
-- [ ] Use `zipalign` before `apksigner`, then verify the final APK with `apksigner verify --verbose --print-certs` and
+- [x] Use `zipalign` before `apksigner`, then verify the final APK with `apksigner verify --verbose --print-certs` and
   the existing package/version/native-payload validators.
-- [ ] Require an expected owner certificate SHA-256 supplied as a non-secret repository variable or checked trusted
+- [x] Require an expected owner certificate SHA-256 supplied as a non-secret repository variable or checked trusted
   configuration. A mismatch aborts before publication.
-- [ ] Confirm GMS and FOSS signed assets use the same source SHA and certificate. Preserve raw unsigned, zipaligned and
+- [x] Confirm GMS and FOSS signed assets use the same source SHA and certificate. Preserve raw unsigned, zipaligned and
   signed digests in the aggregate manifest; store portable asset names, never build-host absolute paths.
-- [ ] Ensure all temporary signing files are created below a unique `$RUNNER_TEMP` directory under `umask 077`, removed
+- [x] Ensure all temporary signing files are created below a unique `$RUNNER_TEMP` directory under `umask 077`, removed
   on success/failure by both a trap and an `always()` step, and ultimately discarded with the ephemeral hosted runner
   on forced cancellation. No signing material may enter a worktree, cache or artifact.
 
 ## User Story 2 — Upstream channel publication workflow
 
-- [ ] Add one reusable workflow/job interface accepting only `stable` or `edge`; map those values internally to
+- [x] Add one reusable workflow/job interface accepting only `stable` or `edge`; map those values internally to
   `--latest-stable` and `--latest-edge`.
-- [ ] Run the upstream build/test job without a GitHub environment containing signing or release secrets. Upload only
+- [x] Run the upstream build/test job without a GitHub environment containing signing or release secrets. Upload only
   unsigned APKs and pre-sign manifests as short-lived Actions artifacts.
-- [ ] Set build-job `permissions: contents: read`, use checkout with `persist-credentials: false`, validate the Gradle
+- [x] Set build-job `permissions: contents: read`, use checkout with `persist-credentials: false`, validate the Gradle
   Wrapper, pin every third-party Action by commit SHA and upload an exact allowlist with `if-no-files-found: error`.
-- [ ] Run signing and publication in a separate trusted job after the build job succeeds. Decode the owner keystore
+- [x] Run signing and publication in a separate trusted job after the build job succeeds. Decode the owner keystore
   below `$RUNNER_TEMP`, generate any required properties there, sign, verify and remove all temporary material.
-- [ ] Build both `gmsRelease` and `fossRelease` from the same resolved source SHA. Abort if the moving `edge` selector
+- [x] Build both `gmsRelease` and `fossRelease` from the same resolved source SHA. Abort if the moving `edge` selector
   changes between the two builds; pin the first resolution and pass the exact SHA through the remaining jobs.
-- [ ] Add `workflow_dispatch` for an explicit channel run and a bounded scheduled poll for automatic discovery.
+- [x] Add `workflow_dispatch` for an explicit channel run and a bounded scheduled poll for automatic discovery.
   Stable publication is a no-op when `upstream-vX.Y.Z` already exists with matching provenance. Edge publication is a
   no-op when the existing `upstream-edge` release already records the same source SHA and asset digests.
-- [ ] Gate publication on the exact source still being current for its channel. If upstream `edge` moves while a run is
+- [x] Gate publication on the exact source still being current for its channel. If upstream `edge` moves while a run is
   queued or building, skip the stale publication and let the next run publish.
-- [ ] Use channel-scoped concurrency. Never cancel a signing/upload operation mid-publication; apply a final freshness
+- [x] Use channel-scoped concurrency. Never cancel a signing/upload operation mid-publication; apply a final freshness
   guard immediately before changing the rolling edge release.
-- [ ] Publish stable mirror releases immutably. A digest mismatch for an already existing stable mirror tag is an error,
+- [x] Publish stable mirror releases immutably. A digest mismatch for an already existing stable mirror tag is an error,
   not permission to overwrite historical assets.
-- [ ] Update `upstream-edge` assets with `--clobber` only after all signed assets and the aggregate manifest have passed
+- [x] Update `upstream-edge` assets with `--clobber` only after all signed assets and the aggregate manifest have passed
   local verification. Back up and verify the previous assets first; on failure attempt a rollback and report an
   incomplete release if restoration cannot be proven. Do not claim atomicity.
 
 ## User Story 3 — Preserve the fork release stream
 
-- [ ] Keep the current fork `v*` stable workflow and fork `edge` rolling workflow behavior unchanged unless a separate
+- [x] Keep the current fork `v*` stable workflow and fork `edge` rolling workflow behavior unchanged unless a separate
   migration decision explicitly replaces them.
-- [ ] Give upstream mirror assets and release titles an unmistakable `upstream` prefix.
-- [ ] Add release notes warning that mirror APKs omit fork-only administrator, Shizuku, trusted unlock/sleep and origin
+- [x] Give upstream mirror assets and release titles an unmistakable `upstream` prefix.
+- [x] Add release notes warning that mirror APKs omit fork-only administrator, Shizuku, trusted unlock/sleep and origin
   recovery extensions.
-- [ ] Warn that mirror APKs keep the package ID and use the fork owner's certificate: manual installation can replace a
+- [x] Warn that mirror APKs keep the package ID and use the fork owner's certificate: manual installation can replace a
   fork build and remove those features, while it may be signature-incompatible with official upstream binaries.
-- [ ] Assert the actual updater endpoint remains the official upstream repository's `/releases/latest`, so it cannot
+- [x] Assert the actual updater endpoint remains the official upstream repository's `/releases/latest`, so it cannot
   see releases in this fork. The mirror pre-release flag remains a mandatory second defense.
-- [ ] Do not deploy upstream mirror APKs to [REDACTED_DEVICE_ALIAS] or [REDACTED_DEVICE_ALIAS] as part of publication. Device promotion remains a separate,
+- [x] Do not deploy upstream mirror APKs to [REDACTED_DEVICE_ALIAS] or [REDACTED_DEVICE_ALIAS] as part of publication. Device promotion remains a separate,
   explicit, signer/version/config guarded action.
 
 ## User Story 4 — Verification and failure handling
 
-- [ ] Extend `scripts/tests/test-sync-build-deploy.sh` for stable/edge resolution, exact-SHA pinning, manifest
+- [x] Extend `scripts/tests/test-sync-build-deploy.sh` for stable/edge resolution, exact-SHA pinning, manifest
   uniqueness, unsigned-to-signed provenance, wrong-certificate rejection, missing-secret rejection and cleanup.
-- [ ] Add tests showing arbitrary branch/develop inputs are rejected.
-- [ ] Add workflow validation (`actionlint` or an equivalent pinned validator) and shell syntax checks.
-- [ ] Test that build jobs expose no ngrok/publishing secret and no persisted Git credential, and fail closed for extra
+- [x] Add tests showing arbitrary branch/develop inputs are rejected.
+- [x] Add workflow validation (`actionlint` or an equivalent pinned validator) and shell syntax checks.
+- [x] Test that build jobs expose no ngrok/publishing secret and no persisted Git credential, and fail closed for extra
   assets, a tag without a release, a release without manifest and a same-SHA damaged asset set.
-- [ ] Exercise both channels without publication first: build unsigned GMS/FOSS Release artifacts, sign with a test
+- [x] Exercise both channels without publication first: build unsigned GMS/FOSS Release artifacts, sign with a test
   keystore, verify package/version/certificate/native payload and compare aggregate provenance.
-- [ ] Perform one GitHub dry run that creates no release and prints only non-secret source labels, SHAs and artifact
+- [x] Perform one GitHub dry run that creates no release and prints only non-secret source labels, SHAs and artifact
   digests.
-- [ ] Publish one `upstream-edge` pre-release, download its assets anonymously and independently verify their digests,
-  signer and manifest. Then repeat the workflow for the same source SHA and prove it is an idempotent no-op.
-- [ ] Publish a stable mirror only after the edge path passes. Re-running the same stable source must not overwrite it.
-- [ ] Audit tracked files, workflow logs, Actions artifacts and release assets for keystore material, passwords, tokens,
+- [x] Publish one `upstream-edge` pre-release, download its assets anonymously and independently verify their digests,
+  signer and manifest. Then repeat the same-source publication layer and prove it is an idempotent no-op.
+- [x] Publish stable and edge mirrors only after the shared path passes local qualification. Re-running the same stable
+  source must not overwrite it.
+- [x] Audit tracked files, workflow logs, Actions artifacts and release assets for keystore material, passwords, tokens,
   PINs, OAuth identifiers and device configuration.
-- [ ] On failure before publication, leave the existing release untouched. On partial edge upload failure, restore the
+- [x] On failure before publication, leave the existing release untouched. On partial edge upload failure, restore the
   previously verified backup on a best-effort basis and fail with an explicit incomplete-state report if restoration
   cannot be proven.
 
 ## Documentation and delivery
 
-- [ ] Document the distinction between fork releases, upstream stable mirrors and upstream edge mirrors in the root
+- [x] Document the distinction between fork releases, upstream stable mirrors and upstream edge mirrors in the root
   README, including exact commands and the absence of fork-only features in mirror APKs.
-- [ ] Document required GitHub secrets and non-secret repository variables by name only; never record values.
-- [ ] Record the final tag naming, release URLs, source SHAs, APK digests and signer digest after acceptance.
-- [ ] Commit plan/review separately from implementation. Push workflow changes only after local tests and the no-publish
+- [x] Document required GitHub secrets and non-secret repository variables by name only; never record values.
+- [x] Record the final tag naming, release URLs, source SHAs, APK digests and signer digest after acceptance.
+- [x] Commit plan/review separately from implementation. Push workflow changes only after local tests and the no-publish
   dry run pass.
 
 ## Acceptance criteria
