@@ -1,0 +1,14 @@
+import org.gradle.api.tasks.testing.Test
+
+// ARCP channel compilation and static qualification receive no account, device, signing or publication secrets.
+// The live ngrok account test runs later in its own protected least-privilege job. This filter excludes only that
+// runtime class; it remains compiled with the rest of the owner integration suite.
+allprojects {
+    tasks.withType(Test).configureEach {
+        filter {
+            excludeTestsMatching(
+                "com.danielealbano.androidremotecontrolmcp.integration.NgrokTunnelIntegrationTest"
+            )
+        }
+    }
+}

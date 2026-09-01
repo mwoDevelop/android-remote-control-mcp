@@ -15,11 +15,11 @@ TEMP_DIR=""
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/publish-upstream-channel-release.sh --release-dir <dir> [--repo <owner/repo>] [--apply]
+  scripts/publish-arcp-channel-release.sh --release-dir <dir> [--repo <owner/repo>] [--apply]
 
 Without --apply the command performs a non-mutating publication dry run. With --apply it verifies
-channel freshness immediately before changing GitHub. Stable mirror releases are immutable. The rolling
-edge release is updated only for a new source SHA; previous assets are backed up for best-effort rollback.
+official and owner channel freshness immediately before creating one immutable ARCP release. Existing
+tags/assets are never overwritten; a complete matching release is an idempotent no-op.
 EOF
 }
 
@@ -81,10 +81,14 @@ validate_release_assets() {
   [[ -f "$manifest" ]] || return 10
   node -e '
     const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
-    if (m.schema_version!==2 || m.type!=="upstream_channel_release" || m.prerelease!==true ||
-        !["stable","edge"].includes(m.channel) || !/^[0-9a-f]{40}$/.test(m.source_sha) ||
+    if (m.schema_version!==3 || m.type!=="arcp_channel_release" || m.immutable!==true ||
+        !["stable","edge"].includes(m.channel) || m.prerelease!==(m.channel==="edge") ||
+        !/^[0-9a-f]{40}$/.test(m.upstream_sha) || !/^[0-9a-f]{40}$/.test(m.local_sha) ||
+        m.local_ref!==`release/${m.channel}` || !/^[0-9a-f]{64}$/.test(m.feature_contract_sha256) ||
+        !m.submodules || !["vendor/cloudflared","vendor/ngrok-java"].every(k=>/^[0-9a-f]{40}$/.test(m.submodules[k]||"")) ||
         !/^[0-9a-f]{40}$/.test(m.workflow_source_sha) || !/^[0-9a-f]{64}$/.test(m.certificate_sha256) ||
-        m.qualification?.profile!=="upstream_mirror_secretless" ||
+        m.qualification?.profile!=="arcp_fork_release" ||
+        m.qualification?.ngrok_live_integration!=="passed_protected_job" ||
         m.qualification?.mandatory_gates_skipped!==false || !Array.isArray(m.assets) || m.assets.length!==2 ||
         new Set(m.assets.map(a=>a.variant)).size!==2 ||
         !m.assets.every(a=>["gmsRelease","fossRelease"].includes(a.variant) &&
@@ -158,16 +162,15 @@ validate_release_assets "$RELEASE_DIR" true || validation_status=$?
 
 MANIFEST="$RELEASE_DIR/release-manifest.json"
 CHANNEL="$(json_value "$MANIFEST" channel)"
-SOURCE_LABEL="$(json_value "$MANIFEST" source_label)"
-SOURCE_SHA="$(json_value "$MANIFEST" source_sha)"
+UPSTREAM_LABEL="$(json_value "$MANIFEST" upstream_label)"
+UPSTREAM_SHA="$(json_value "$MANIFEST" upstream_sha)"
+LOCAL_REF="$(json_value "$MANIFEST" local_ref)"
+LOCAL_SHA="$(json_value "$MANIFEST" local_sha)"
 RELEASE_TAG="$(json_value "$MANIFEST" release_tag)"
 WORKFLOW_SOURCE_SHA="$(json_value "$MANIFEST" workflow_source_sha)"
-if [[ "$CHANNEL" == stable ]]; then
-  [[ "$RELEASE_TAG" == "upstream-$SOURCE_LABEL" && "$SOURCE_LABEL" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
-    die "Stable release tag contract is invalid"
-else
-  [[ "$RELEASE_TAG" == upstream-edge && "$SOURCE_LABEL" == edge ]] || die "Edge release tag contract is invalid"
-fi
+[[ "$RELEASE_TAG" =~ ^arcp-(stable|edge)-[A-Za-z0-9._-]+-vc[0-9]+$ ]] ||
+  die "Immutable ARCP release tag contract is invalid"
+[[ "$LOCAL_REF" == "release/$CHANNEL" ]] || die "Local release ref mismatch"
 
 mapfile -t SIGNED_ASSETS < <(node -e '
   const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
@@ -176,8 +179,9 @@ mapfile -t SIGNED_ASSETS < <(node -e '
 UPLOAD_ASSETS=("$RELEASE_DIR/${SIGNED_ASSETS[0]}" "$RELEASE_DIR/${SIGNED_ASSETS[1]}" "$MANIFEST")
 
 if [[ "$APPLY" == false ]]; then
-  printf 'DRY RUN: would publish pre-release %s to %s\n' "$RELEASE_TAG" "$REPOSITORY"
-  printf 'channel=%s source_label=%s source_sha=%s\n' "$CHANNEL" "$SOURCE_LABEL" "$SOURCE_SHA"
+  printf 'DRY RUN: would publish immutable ARCP release %s to %s\n' "$RELEASE_TAG" "$REPOSITORY"
+  printf 'channel=%s upstream=%s/%s local=%s/%s\n' \
+    "$CHANNEL" "$UPSTREAM_LABEL" "$UPSTREAM_SHA" "$LOCAL_REF" "$LOCAL_SHA"
   for asset in "${UPLOAD_ASSETS[@]}"; do
     printf 'asset=%s sha256=%s\n' "$(basename "$asset")" "$(sha256sum "$asset" | awk '{print $1}')"
   done
@@ -188,10 +192,11 @@ fi
 require_command gh
 require_command git
 channel_flag="--latest-$CHANNEL"
-"$SCRIPT_DIR/sync-build-deploy.sh" channel-info "$channel_flag" --expected-source-sha "$SOURCE_SHA" >/dev/null
+"$SCRIPT_DIR/sync-build-deploy.sh" channel-info "$channel_flag" \
+  --expected-source-sha "$UPSTREAM_SHA" --expected-local-sha "$LOCAL_SHA" >/dev/null
 TEMP_BASE="${RUNNER_TEMP:-/tmp}"
 [[ -d "$TEMP_BASE" ]] || die "Temporary directory base does not exist: $TEMP_BASE"
-TEMP_DIR="$(mktemp -d "$TEMP_BASE/arcp-upstream-publish.XXXXXX")"
+TEMP_DIR="$(mktemp -d "$TEMP_BASE/arcp-channel-publish.XXXXXX")"
 
 release_exists=false
 if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
@@ -200,10 +205,12 @@ elif gh api "repos/$REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
   die "Tag $RELEASE_TAG exists without a release; refusing ambiguous publication"
 fi
 
-TITLE="Official upstream $CHANNEL mirror — $SOURCE_LABEL"
+TITLE="ARCP $CHANNEL — $UPSTREAM_LABEL / ${LOCAL_SHA:0:12}"
 if [[ "$release_exists" == true ]]; then
-  [[ "$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json isPrerelease --jq .isPrerelease)" == true ]] ||
-    die "Existing mirror release is not marked as a pre-release"
+  expected_prerelease=false
+  [[ "$CHANNEL" == edge ]] && expected_prerelease=true
+  [[ "$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json isPrerelease --jq .isPrerelease)" == "$expected_prerelease" ]] ||
+    die "Existing release pre-release state is invalid"
   BACKUP_DIR="$TEMP_DIR/previous"
   mkdir -p "$BACKUP_DIR"
   gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --dir "$BACKUP_DIR"
@@ -212,43 +219,16 @@ if [[ "$release_exists" == true ]]; then
   [[ $validation_status -eq 0 ]] ||
     die "Existing release assets are incomplete or damaged (validation code $validation_status)"
   PREVIOUS_MANIFEST="$BACKUP_DIR/release-manifest.json"
-  PREVIOUS_SOURCE_SHA="$(json_value "$PREVIOUS_MANIFEST" source_sha)"
   [[ "$(json_value "$PREVIOUS_MANIFEST" release_tag)" == "$RELEASE_TAG" ]] ||
     die "Existing release manifest tag mismatch"
-  if [[ "$PREVIOUS_SOURCE_SHA" == "$SOURCE_SHA" ]]; then
-    for variant in gmsRelease fossRelease; do
-      previous_digest="$(node -e '
-        const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
-        process.stdout.write(m.assets.find(a=>a.variant===process.argv[2]).signed_sha256);
-      ' "$PREVIOUS_MANIFEST" "$variant")"
-      current_digest="$(node -e '
-        const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
-        process.stdout.write(m.assets.find(a=>a.variant===process.argv[2]).signed_sha256);
-      ' "$MANIFEST" "$variant")"
-      [[ "$previous_digest" == "$current_digest" ]] ||
-        die "Existing same-source release has a different $variant digest; explicit repair is required"
-    done
-    printf 'NO-OP: %s already contains a complete verified bundle for %s\n' "$RELEASE_TAG" "$SOURCE_SHA"
-    exit 0
-  fi
-  [[ "$CHANNEL" == edge ]] || die "Stable mirror release is immutable and records another source SHA"
-
-  gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json body --jq .body >"$TEMP_DIR/previous-notes.md"
-  if ! gh release upload "$RELEASE_TAG" --repo "$REPOSITORY" --clobber "${UPLOAD_ASSETS[@]}" ||
-     ! gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --title "$TITLE" --prerelease \
-       --notes-file "$RELEASE_DIR/release-notes.md"; then
-    printf 'ERROR: edge update failed; attempting best-effort restoration\n' >&2
-    mapfile -t backup_assets < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type f | sort)
-    if gh release upload "$RELEASE_TAG" --repo "$REPOSITORY" --clobber "${backup_assets[@]}" &&
-       gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --prerelease \
-         --notes-file "$TEMP_DIR/previous-notes.md"; then
-      die "Edge publication failed; previous verified assets were restored"
-    fi
-    die "INCOMPLETE RELEASE: edge publication and rollback both failed; manual repair is required"
-  fi
-  printf 'Updated rolling pre-release %s for %s\n' "$RELEASE_TAG" "$SOURCE_SHA"
+  cmp -s "$PREVIOUS_MANIFEST" "$MANIFEST" ||
+    die "Immutable release identity already exists with different provenance or asset digests"
+  printf 'NO-OP: immutable release %s already contains the complete verified bundle\n' "$RELEASE_TAG"
+  exit 0
 else
-  gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --target "$WORKFLOW_SOURCE_SHA" \
-    --title "$TITLE" --prerelease --notes-file "$RELEASE_DIR/release-notes.md" "${UPLOAD_ASSETS[@]}"
-  printf 'Created pre-release %s for %s\n' "$RELEASE_TAG" "$SOURCE_SHA"
+  create_args=(release create "$RELEASE_TAG" --repo "$REPOSITORY" --target "$LOCAL_SHA" \
+    --title "$TITLE" --notes-file "$RELEASE_DIR/release-notes.md")
+  [[ "$CHANNEL" != edge ]] || create_args+=(--prerelease)
+  gh "${create_args[@]}" "${UPLOAD_ASSETS[@]}"
+  printf 'Created immutable ARCP %s release %s for local %s\n' "$CHANNEL" "$RELEASE_TAG" "$LOCAL_SHA"
 fi

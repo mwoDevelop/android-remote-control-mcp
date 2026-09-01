@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "application_id": "com.danielealbano.androidremotecontrolmcp",
+  "required_channels": ["stable", "edge"],
+  "features": [
+    {
+      "id": "privileged_admin_tools",
+      "canonical_commit": "b4fb284",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/shizuku/ShizukuAdminTools.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/shizuku/ShizukuAdminToolsRegistrationTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/shizuku/PrivilegedToolAuthorizerTest.kt"
+      ]
+    },
+    {
+      "id": "protected_package_policy",
+      "canonical_commit": "b4fb284",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/shizuku/ProtectedPackagePolicy.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/shizuku/UninstallApplicationAdminHandlerTest.kt"
+      ]
+    },
+    {
+      "id": "authenticated_client_context",
+      "canonical_commit": "a464795",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/auth/McpAuthClientContext.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/integration/AuthClientContextIntegrationTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/auth/BearerTokenAuthTest.kt"
+      ]
+    },
+    {
+      "id": "oauth_client_restore",
+      "canonical_commit": "ea9f944",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/data/repository/OAuthClientRepositoryImpl.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/oauth/OAuthClientRepositoryImplTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/services/mcp/AdbConfigHandlerTest.kt"
+      ]
+    },
+    {
+      "id": "trusted_remote_unlock",
+      "canonical_commit": "f34a749",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/security/remoteunlock/RemoteUnlockCredentialStore.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/security/remoteunlock/RemoteUnlockAttemptPolicyTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/security/remoteunlock/TrustedRemoteUnlockCallerPolicyTest.kt"
+      ]
+    },
+    {
+      "id": "remote_sleep",
+      "canonical_commit": "4fbd92c",
+      "implementation": "shizuku-admin/src/main/kotlin/com/mwodevelop/androidremotecontrol/shizukuadmin/ShizukuPrivilegedAdminBackend.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/shizuku/SleepDeviceAdminHandlerTest.kt"
+      ]
+    },
+    {
+      "id": "cloudflare_process_recovery",
+      "canonical_commit": "486e7be",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/services/tunnel/CloudflareTunnelProvider.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/services/tunnel/CloudflareTunnelProviderTest.kt"
+      ]
+    },
+    {
+      "id": "mcp_origin_recovery",
+      "canonical_commit": "f7ff992",
+      "implementation": "app/src/main/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/RecoveryCoordinator.kt",
+      "tests": [
+        "app/src/test/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/OriginRecoveryTest.kt",
+        "app/src/test/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/RecoveryCoordinatorTest.kt"
+      ]
+    },
+    {
+      "id": "storage_default_500mb",
+      "canonical_commit": "517592b",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/data/model/ServerConfig.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/data/model/ServerConfigTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/data/repository/SettingsRepositoryImplTest.kt"
+      ]
+    },
+    {
+      "id": "owner_admin_ui",
+      "canonical_commit": "d42b724",
+      "implementation": "shizuku-admin/src/main/kotlin/com/mwodevelop/androidremotecontrol/shizukuadmin/RemoteUnlockAdminActivity.kt",
+      "tests": [
+        "shizuku-admin/src/test/kotlin/com/mwodevelop/androidremotecontrol/shizukuadmin/RemoteUnlockAdminManifestTest.kt"
+      ]
+    }
+  ],
+  "channel_adapters": {
+    "edge": {
+      "upstream_transport": "McpStatelessTransport",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/McpStatelessTransport.kt",
+      "common_context": "app/src/main/kotlin/com/mwodevelop/androidremotecontrolmcp/compat/OwnerMcpRequestContext.kt"
+    },
+    "stable": {
+      "upstream_transport": "McpStreamableHttpExtension",
+      "implementation": "app/src/main/kotlin/com/mwodevelop/androidremotecontrolmcp/compat/StableMcpTransportAdapter.kt",
+      "common_context": "app/src/main/kotlin/com/mwodevelop/androidremotecontrolmcp/compat/OwnerMcpRequestContext.kt"
+    }
+  },
+  "required_manifest_checks": [
+    "owner_admin_activity_not_exported",
+    "shizuku_user_service_permission",
+    "restricted_settings_not_bypassed"
+  ],
+  "required_native_payloads": [
+    "arm64-v8a/libcloudflared.so",
+    "arm64-v8a/libngrok_java.so",
+    "x86_64/libcloudflared.so",
+    "x86_64/libngrok_java.so"
+  ],
+  "stable_security_backports": [
+    {
+      "upstream_commit": "4d1efbd",
+      "classification": "required_backport",
+      "reason": "Netty HTTP dependency security update"
+    },
+    {
+      "upstream_commit": "0ea3c2f",
+      "classification": "required_backport",
+      "reason": "Force patched Netty 4.1 tooling transitives"
+    },
+    {
+      "upstream_commit": "01618ae",
+      "classification": "edge_adapter_only",
+      "reason": "Ktor 3.5 transport generation change; stable keeps Ktor 3.4 adapter"
+    },
+    {
+      "upstream_commit": "2c4f1a0",
+      "classification": "edge_adapter_only",
+      "reason": "MCP SDK stateless transport refactor; stable keeps legacy session transport"
+    }
+  ]
+}
