@@ -210,7 +210,10 @@ for variant in gmsRelease fossRelease; do
   manifest_local_ref="$(json_value "$manifest" local_ref)"
   manifest_local_sha="$(json_value "$manifest" local_sha)"
   manifest_feature_contract="$(json_value "$manifest" feature_contract_sha256)"
-  manifest_submodules="$(node -e 'const m=require(process.argv[1]);process.stdout.write(JSON.stringify(m.submodules))' "$manifest")"
+  manifest_submodules="$(node -e '
+    const fs=require("fs"), m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+    process.stdout.write(JSON.stringify(m.submodules));
+  ' "$manifest")"
   [[ "$manifest_channel" == stable || "$manifest_channel" == edge ]] || die "Unknown channel in manifest"
   [[ "$manifest_sha" =~ ^[0-9a-f]{40}$ && "$manifest_local_sha" =~ ^[0-9a-f]{40}$ ]] ||
     die "Invalid source SHA in manifest"

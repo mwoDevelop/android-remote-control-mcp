@@ -121,6 +121,9 @@ if [[ "$COMMAND" == download ]]; then
   gh release download "$TAG" --repo "$REPOSITORY" --dir "$RELEASE_DIR"
 fi
 
+[[ -d "$RELEASE_DIR" ]] || die "--dir must be an existing directory"
+RELEASE_DIR="$(cd -- "$RELEASE_DIR" && pwd -P)"
+
 MANIFEST="$RELEASE_DIR/release-manifest.json"
 [[ -f "$MANIFEST" && ! -L "$MANIFEST" ]] || die "Missing regular release-manifest.json"
 node -e '

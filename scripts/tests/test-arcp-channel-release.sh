@@ -143,6 +143,16 @@ test_sign_and_dry_run() {
   pass 'dual-source bundle signs and dry-run is non-mutating'
 }
 
+test_relative_signing_paths() {
+  make_inputs "$WORK_ROOT/relative-input"
+  (
+    cd "$WORK_ROOT"
+    sign_bundle relative-input relative-output >/dev/null
+  )
+  [[ -f "$WORK_ROOT/relative-output/release-manifest.json" ]]
+  pass 'signing accepts workflow-style relative artifact paths without Node module resolution'
+}
+
 test_failures() {
   local input="$WORK_ROOT/bad-input" output="$WORK_ROOT/bad-output"
   make_inputs "$input"
@@ -180,6 +190,7 @@ touch "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-passw
 chmod 600 "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 test_workflow_contract
 test_sign_and_dry_run
+test_relative_signing_paths
 test_failures
 test_apply_create
 printf '1..%d\n' "$PASSED"
