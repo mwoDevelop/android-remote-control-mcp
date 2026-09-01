@@ -187,6 +187,8 @@ for variant in gmsRelease fossRelease; do
   [[ "$(json_value "$manifest" application_id)" == "$PACKAGE_ID" ]] || die "Manifest package ID mismatch"
   [[ "$(json_value "$manifest" qualification.profile)" == upstream_mirror_secretless ]] ||
     die "Unexpected qualification profile"
+  test_retry_occurred="$(json_value "$manifest" qualification.test_retry_occurred)"
+  [[ "$test_retry_occurred" == true || "$test_retry_occurred" == false ]] || die "Invalid test retry provenance"
 
   manifest_channel="$(json_value "$manifest" channel)"
   manifest_label="$(json_value "$manifest" source_label)"
@@ -232,9 +234,9 @@ for variant in gmsRelease fossRelease; do
   [[ "$signed_metadata" == "$raw_metadata" ]] || die "Signing changed package/version metadata"
   validate_tunnel_payload "$signed_apk"
   signed_sha="$(sha256sum "$signed_apk" | awk '{print $1}')"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$variant" "$raw_name" "$raw_sha" "$aligned_sha" "$signed_name" "$signed_sha" \
-    "$app_id" "$version_code" "$version_name" "$signer_digest" >>"$ROWS_FILE"
+    "$app_id" "$version_code" "$version_name" "$signer_digest" "$test_retry_occurred" >>"$ROWS_FILE"
 done
 
 if [[ "$CHANNEL" == stable ]]; then
@@ -250,11 +252,11 @@ node -e '
   const [out,rowsFile,channel,label,sourceSha,tag,cert,runId,workflowSourceSha]=process.argv.slice(1);
   const assets=fs.readFileSync(rowsFile,"utf8").trim().split("\n").filter(Boolean).map(line=>{
     const [variant,rawUnsignedAsset,rawUnsignedSha256,zipalignedSha256,signedAsset,signedSha256,
-      applicationId,versionCode,versionName,certificateSha256]=line.split("\t");
+      applicationId,versionCode,versionName,certificateSha256,testRetryOccurred]=line.split("\t");
     return {variant,raw_unsigned_asset:rawUnsignedAsset,raw_unsigned_sha256:rawUnsignedSha256,
       zipaligned_sha256:zipalignedSha256,signed_asset:signedAsset,signed_sha256:signedSha256,
       application_id:applicationId,version_code:Number(versionCode),version_name:versionName,
-      certificate_sha256:certificateSha256};
+      certificate_sha256:certificateSha256,test_retry_occurred:testRetryOccurred==="true"};
   });
   fs.writeFileSync(out,JSON.stringify({schema_version:2,type:"upstream_channel_release",
     created_at:new Date().toISOString(),channel,release_tag:tag,prerelease:true,
