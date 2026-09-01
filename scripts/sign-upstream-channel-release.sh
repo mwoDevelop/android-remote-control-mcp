@@ -227,7 +227,7 @@ for variant in gmsRelease fossRelease; do
   aligned_sha="$(sha256sum "$aligned_apk" | awk '{print $1}')"
   "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" \
     --ks-pass "file:$STORE_PASSWORD_FILE" --key-pass "file:$KEY_PASSWORD_FILE" \
-    --out "$signed_apk" "$aligned_apk"
+    --v4-signing-enabled false --out "$signed_apk" "$aligned_apk"
   "$ZIPALIGN" -c -p 4 "$signed_apk"
   signer_digest="$(verified_single_signer_digest "$APKSIGNER" "$signed_apk")"
   signed_metadata="$(apk_package_metadata "$APKANALYZER" "$signed_apk")"
