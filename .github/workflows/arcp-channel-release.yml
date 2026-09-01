@@ -219,7 +219,7 @@ jobs:
           (cd vendor/ngrok-java/ngrok-java-native && cargo build --release)
           (cd vendor/ngrok-java/ngrok-java-native/target/release && \
             jar cf ../ngrok-java-native-host.jar libngrok_java.so)
-          ./gradlew :app:test --tests \
+          ./gradlew :app:testGmsDebugUnitTest --tests \
             com.danielealbano.androidremotecontrolmcp.integration.NgrokTunnelIntegrationTest
           node -e '
             const fs=require("fs"); const [channel,upstreamSha,localSha]=process.argv.slice(1);

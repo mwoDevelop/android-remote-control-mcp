@@ -124,6 +124,7 @@ test_workflow_contract() {
   grep -Fq 'scripts/arcp-version-ledger.sh' "$workflow"
   grep -Fq 'scripts/sign-arcp-channel-release.sh' "$workflow"
   grep -Fq 'scripts/publish-arcp-channel-release.sh' "$workflow"
+  grep -Fq './gradlew :app:testGmsDebugUnitTest --tests' "$workflow"
   ! grep -Fq 'sign-upstream-channel-release.sh' "$workflow"
   pass 'workflow separates static, live and signing trust boundaries'
 }
