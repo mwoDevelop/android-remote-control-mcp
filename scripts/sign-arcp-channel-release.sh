@@ -78,14 +78,9 @@ assert_private_file() {
 }
 
 validate_tunnel_payload() {
-  local apk="$1" entries abi library
-  entries="$(unzip -Z1 "$apk")"
-  for abi in arm64-v8a x86_64; do
-    for library in libcloudflared.so libngrok_java.so; do
-      grep -Fxq "lib/$abi/$library" <<<"$entries" ||
-        die "APK is missing required tunnel payload: lib/$abi/$library"
-    done
-  done
+  # shellcheck source=lib/native-tunnel-payloads.sh
+  source "$SCRIPT_DIR/lib/native-tunnel-payloads.sh"
+  validate_native_tunnel_payload "$1"
 }
 
 apk_package_metadata() {
@@ -183,6 +178,9 @@ LOCAL_REF=""
 LOCAL_SHA=""
 FEATURE_CONTRACT_SHA256=""
 SUBMODULES_JSON=""
+NATIVE_PAYLOAD_CONTRACT_VERSION=""
+NATIVE_PAYLOAD_CONTRACT_SHA256=""
+NATIVE_TOOLCHAIN_JSON=""
 ROWS_FILE="$TEMP_DIR/assets.tsv"
 : >"$ROWS_FILE"
 
@@ -190,7 +188,7 @@ for variant in gmsRelease fossRelease; do
   mapfile -t matches < <(find "$INPUT_DIR" -maxdepth 1 -type f -name "manifest-${variant}-*.json" | sort)
   ((${#matches[@]} == 1)) || die "Expected exactly one $variant pre-sign manifest"
   manifest="${matches[0]}"
-  [[ "$(json_value "$manifest" schema_version)" == 3 ]] || die "Unsupported pre-sign manifest schema"
+  [[ "$(json_value "$manifest" schema_version)" == 4 ]] || die "Unsupported pre-sign manifest schema"
   [[ "$(json_value "$manifest" type)" == arcp_channel_pre_sign ]] || die "Unexpected manifest type"
   [[ "$(json_value "$manifest" variant)" == "$variant" ]] || die "Manifest variant mismatch"
   [[ "$(json_value "$manifest" qualified)" == true ]] || die "Pre-sign artifact is not qualified"
@@ -210,12 +208,29 @@ for variant in gmsRelease fossRelease; do
   manifest_local_ref="$(json_value "$manifest" local_ref)"
   manifest_local_sha="$(json_value "$manifest" local_sha)"
   manifest_feature_contract="$(json_value "$manifest" feature_contract_sha256)"
-  manifest_submodules="$(node -e 'const m=require(process.argv[1]);process.stdout.write(JSON.stringify(m.submodules))' "$manifest")"
+  manifest_native_contract_version="$(json_value "$manifest" native_payload_contract_version)"
+  manifest_native_contract_sha="$(json_value "$manifest" native_payload_contract_sha256)"
+  manifest_native_toolchain="$(node -e '
+    const fs=require("fs"), m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+    process.stdout.write(JSON.stringify(m.native_toolchain));
+  ' "$manifest")"
+  manifest_submodules="$(node -e '
+    const fs=require("fs"), m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+    process.stdout.write(JSON.stringify(m.submodules));
+  ' "$manifest")"
   [[ "$manifest_channel" == stable || "$manifest_channel" == edge ]] || die "Unknown channel in manifest"
   [[ "$manifest_sha" =~ ^[0-9a-f]{40}$ && "$manifest_local_sha" =~ ^[0-9a-f]{40}$ ]] ||
     die "Invalid source SHA in manifest"
   [[ "$manifest_local_ref" == "release/$manifest_channel" ]] || die "Unexpected local integration ref"
   [[ "$manifest_feature_contract" =~ ^[0-9a-f]{64}$ ]] || die "Invalid feature contract digest"
+  trusted_native_summary="$(node "$SCRIPT_DIR/native-tunnel-payloads.mjs" "$REPO_ROOT" summary)"
+  trusted_native_contract_version="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).contract_version)' "$trusted_native_summary")"
+  trusted_native_contract_sha="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).contract_sha256)' "$trusted_native_summary")"
+  trusted_native_toolchain="$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(process.argv[1]).toolchain))' "$trusted_native_summary")"
+  [[ "$manifest_native_contract_version" == "$trusted_native_contract_version" &&
+     "$manifest_native_contract_sha" == "$trusted_native_contract_sha" &&
+     "$manifest_native_toolchain" == "$trusted_native_toolchain" ]] ||
+    die "Native payload contract provenance differs from trusted automation"
   node -e '
     const value=JSON.parse(process.argv[1]);
     const required=["vendor/cloudflared","vendor/ngrok-java"];
@@ -228,11 +243,17 @@ for variant in gmsRelease fossRelease; do
     LOCAL_REF="$manifest_local_ref"
     LOCAL_SHA="$manifest_local_sha"
     FEATURE_CONTRACT_SHA256="$manifest_feature_contract"
+    NATIVE_PAYLOAD_CONTRACT_VERSION="$manifest_native_contract_version"
+    NATIVE_PAYLOAD_CONTRACT_SHA256="$manifest_native_contract_sha"
+    NATIVE_TOOLCHAIN_JSON="$manifest_native_toolchain"
     SUBMODULES_JSON="$manifest_submodules"
   else
     [[ "$CHANNEL" == "$manifest_channel" && "$UPSTREAM_LABEL" == "$manifest_label" &&
        "$UPSTREAM_SHA" == "$manifest_sha" && "$LOCAL_REF" == "$manifest_local_ref" &&
        "$LOCAL_SHA" == "$manifest_local_sha" && "$FEATURE_CONTRACT_SHA256" == "$manifest_feature_contract" &&
+       "$NATIVE_PAYLOAD_CONTRACT_VERSION" == "$manifest_native_contract_version" &&
+       "$NATIVE_PAYLOAD_CONTRACT_SHA256" == "$manifest_native_contract_sha" &&
+       "$NATIVE_TOOLCHAIN_JSON" == "$manifest_native_toolchain" &&
        "$SUBMODULES_JSON" == "$manifest_submodules" ]] ||
       die "GMS and FOSS source provenance differs"
   fi
@@ -295,7 +316,7 @@ done
 
 node -e '
   const fs=require("fs");
-  const [out,rowsFile,channel,label,upstreamSha,localRef,localSha,featureContract,submodulesJson,tag,cert,runId,workflowSourceSha]=process.argv.slice(1);
+  const [out,rowsFile,channel,label,upstreamSha,localRef,localSha,featureContract,nativeVersion,nativeSha,nativeToolchainJson,submodulesJson,tag,cert,runId,workflowSourceSha]=process.argv.slice(1);
   const assets=fs.readFileSync(rowsFile,"utf8").trim().split("\n").filter(Boolean).map(line=>{
     const [variant,rawUnsignedAsset,rawUnsignedSha256,zipalignedSha256,signedAsset,signedSha256,
       applicationId,versionCode,versionName,certificateSha256,testRetryOccurred]=line.split("\t");
@@ -304,18 +325,21 @@ node -e '
       application_id:applicationId,version_code:Number(versionCode),version_name:versionName,
       certificate_sha256:certificateSha256,test_retry_occurred:testRetryOccurred==="true"};
   });
-  fs.writeFileSync(out,JSON.stringify({schema_version:3,type:"arcp_channel_release",immutable:true,
+  fs.writeFileSync(out,JSON.stringify({schema_version:4,type:"arcp_channel_release",immutable:true,
     created_at:new Date().toISOString(),channel,release_tag:tag,prerelease:channel==="edge",
     tag_target_semantics:"local_integration_commit",source_repository:
       "https://github.com/mwoDevelop/android-remote-control-mcp",upstream_repository:
       "https://github.com/danielealbano/android-remote-control-mcp",upstream_label:label,
     upstream_sha:upstreamSha,local_ref:localRef,local_sha:localSha,feature_contract_sha256:featureContract,
+    native_payload_contract_version:nativeVersion,native_payload_contract_sha256:nativeSha,
+    native_toolchain:JSON.parse(nativeToolchainJson),
     submodules:JSON.parse(submodulesJson),
     qualification:{profile:"arcp_fork_release",ngrok_live_integration:"passed_protected_job",
       mandatory_gates_skipped:false},workflow_run_id:runId,workflow_source_sha:workflowSourceSha,
       certificate_sha256:cert,assets},null,2)+"\n");
 ' "$OUTPUT_DIR/release-manifest.json" "$ROWS_FILE" "$CHANNEL" "$UPSTREAM_LABEL" "$UPSTREAM_SHA" \
-  "$LOCAL_REF" "$LOCAL_SHA" "$FEATURE_CONTRACT_SHA256" "$SUBMODULES_JSON" "$RELEASE_TAG" "$EXPECTED_CERTIFICATE_SHA256" \
+  "$LOCAL_REF" "$LOCAL_SHA" "$FEATURE_CONTRACT_SHA256" "$NATIVE_PAYLOAD_CONTRACT_VERSION" \
+  "$NATIVE_PAYLOAD_CONTRACT_SHA256" "$NATIVE_TOOLCHAIN_JSON" "$SUBMODULES_JSON" "$RELEASE_TAG" "$EXPECTED_CERTIFICATE_SHA256" \
   "$WORKFLOW_RUN_ID" "$WORKFLOW_SOURCE_SHA"
 
 cat >"$OUTPUT_DIR/release-notes.md" <<EOF

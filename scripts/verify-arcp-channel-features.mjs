@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { loadNativeTunnelContract, nativeTunnelContractDigest } from "./native-tunnel-payloads.mjs";
 
 const [repoRoot, channel, outputMode = "summary"] = process.argv.slice(2);
 
@@ -22,6 +23,20 @@ const raw = fs.readFileSync(ledgerPath, "utf8");
 const ledger = JSON.parse(raw);
 if (ledger.schema_version !== 1) fail("unsupported feature ledger schema");
 if (!ledger.required_channels?.includes(channel)) fail(`channel ${channel} is not required by the ledger`);
+const legacyNativePayloads = [
+  "arm64-v8a/libcloudflared.so",
+  "arm64-v8a/libngrok_java.so",
+  "x86_64/libcloudflared.so",
+  "x86_64/libngrok_java.so",
+];
+let nativeContract = null;
+let nativeContractSha256 = null;
+if (ledger.native_payload_contract === "config/arcp-native-payloads.json") {
+  nativeContract = loadNativeTunnelContract(repoRoot);
+  nativeContractSha256 = nativeTunnelContractDigest(repoRoot);
+} else if (JSON.stringify(ledger.required_native_payloads) !== JSON.stringify(legacyNativePayloads)) {
+  fail("feature ledger does not bind a supported native payload contract");
+}
 
 const requiredPaths = [];
 for (const feature of ledger.features ?? []) {
@@ -44,7 +59,9 @@ for (const [label, relativePath] of requiredPaths) {
   if (!stat?.isFile()) fail(`${label} is missing: ${relativePath}`);
 }
 
-const normalized = JSON.stringify(ledger);
+const normalized = nativeContract
+  ? JSON.stringify({ feature_ledger: ledger, native_payload_contract: nativeContract.contract })
+  : JSON.stringify(ledger);
 const digest = crypto.createHash("sha256").update(normalized).digest("hex");
 if (outputMode === "hash") {
   process.stdout.write(`${digest}\n`);
@@ -56,6 +73,8 @@ if (outputMode === "hash") {
       feature_count: ledger.features.length,
       adapter: adapter.upstream_transport,
       contract_sha256: digest,
+      native_payload_contract_version: nativeContract?.contract.contract_version ?? "legacy-android-tunnels-v1",
+      native_payload_contract_sha256: nativeContractSha256,
     }) + "\n",
   );
 } else {

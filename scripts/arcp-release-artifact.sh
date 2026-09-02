@@ -18,17 +18,21 @@ SERIAL=""
 VARIANT="gmsRelease"
 APPLY=false
 TEMP_DIR=""
+LEDGER_VERIFY=""
+FIRST_INSTALL_ROLLBACK=false
+FIRST_INSTALL_SERIAL=""
 
 usage() {
   cat <<'EOF'
 Usage:
   scripts/arcp-release-artifact.sh download --tag <immutable-tag> --dir <empty-dir> [--repo owner/repo]
   scripts/arcp-release-artifact.sh verify   --tag <immutable-tag> --dir <dir> [--repo owner/repo]
-  scripts/arcp-release-artifact.sh deploy   --tag <immutable-tag> --dir <dir> --device [REDACTED_DEVICE_ALIAS] \
+  scripts/arcp-release-artifact.sh deploy   --tag <immutable-tag> --dir <dir> --device <[REDACTED_DEVICE_ALIAS]|bedroom-tv> \
     [--serial <adb-serial>] [--variant gmsRelease|fossRelease] [--repo owner/repo] [--apply]
 
 download always verifies the downloaded closed asset set. deploy is a preview unless --apply is present and never
-uninstalls the package or clears application data.
+clears application data. The Bedroom TV path is a strict first install and rolls back only a package installed by
+the same failed invocation when its verified pre-state was absent.
 EOF
 }
 
@@ -63,16 +67,16 @@ single_signer() {
 }
 
 validate_payload() {
-  local entries abi library
-  entries="$(unzip -Z1 "$1")"
-  for abi in arm64-v8a x86_64; do
-    for library in libcloudflared.so libngrok_java.so; do
-      grep -Fxq "lib/$abi/$library" <<<"$entries" || die "APK lacks lib/$abi/$library"
-    done
-  done
+  # shellcheck source=lib/native-tunnel-payloads.sh
+  source "$SCRIPT_DIR/lib/native-tunnel-payloads.sh"
+  validate_native_tunnel_payload "$1"
 }
 
 cleanup() {
+  if [[ "$FIRST_INSTALL_ROLLBACK" == true && -n "$FIRST_INSTALL_SERIAL" ]]; then
+    printf 'ROLLBACK: removing the failed Bedroom TV first installation\n' >&2
+    "${ADB[@]}" -s "$FIRST_INSTALL_SERIAL" uninstall "$PACKAGE_ID" >/dev/null 2>&1 || true
+  fi
   [[ -z "$TEMP_DIR" || ! -d "$TEMP_DIR" ]] || rm -rf -- "$TEMP_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -100,7 +104,9 @@ if [[ "$COMMAND" != deploy ]]; then
   [[ -z "$DEVICE" && -z "$SERIAL" && "$APPLY" == false && "$VARIANT" == gmsRelease ]] ||
     die "Device options belong only to deploy"
 else
-  [[ "$DEVICE" == [REDACTED_DEVICE_ALIAS] ]] || die "This promotion path currently accepts only --device [REDACTED_DEVICE_ALIAS]"
+  [[ "$DEVICE" == [REDACTED_DEVICE_ALIAS] || "$DEVICE" == bedroom-tv ]] ||
+    die "This promotion path accepts only --device [REDACTED_DEVICE_ALIAS] or --device bedroom-tv"
+  [[ "$DEVICE" != bedroom-tv || "$VARIANT" == gmsRelease ]] || die "Bedroom TV accepts only gmsRelease"
 fi
 
 require_command gh
@@ -124,11 +130,15 @@ fi
 MANIFEST="$RELEASE_DIR/release-manifest.json"
 [[ -f "$MANIFEST" && ! -L "$MANIFEST" ]] || die "Missing regular release-manifest.json"
 node -e '
-  const m=require(process.argv[1]), tag=process.argv[2];
-  if (m.schema_version!==3 || m.type!=="arcp_channel_release" || m.immutable!==true || m.release_tag!==tag ||
+  const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")), tag=process.argv[2];
+  if (m.schema_version!==4 || m.type!=="arcp_channel_release" || m.immutable!==true || m.release_tag!==tag ||
       m.local_ref!==`release/${m.channel}` || !["stable","edge"].includes(m.channel) ||
       m.prerelease!==(m.channel==="edge") || !/^[0-9a-f]{40}$/.test(m.local_sha) ||
       !/^[0-9a-f]{40}$/.test(m.upstream_sha) || !/^[0-9a-f]{64}$/.test(m.feature_contract_sha256) ||
+      m.native_payload_contract_version!=="android-tunnels-v2" ||
+      !/^[0-9a-f]{64}$/.test(m.native_payload_contract_sha256) ||
+      m.native_toolchain?.go_version!=="1.26.7" ||
+      m.native_toolchain?.android_ndk_version!=="27.2.12479018" || m.native_toolchain?.android_api!==21 ||
       m.qualification?.profile!=="arcp_fork_release" ||
       m.qualification?.ngrok_live_integration!=="passed_protected_job" ||
       m.qualification?.mandatory_gates_skipped!==false || !Array.isArray(m.assets) || m.assets.length!==2 ||
@@ -184,9 +194,22 @@ git -C "$REPO_ROOT" archive "$LOCAL_SHA" | tar -x -C "$TEMP_DIR"
 actual_feature_contract="$(node "$SCRIPT_DIR/verify-arcp-channel-features.mjs" "$TEMP_DIR" "$CHANNEL" hash)"
 expected_feature_contract="$(json_value "$MANIFEST" feature_contract_sha256)"
 [[ "$actual_feature_contract" == "$expected_feature_contract" ]] || die "Feature contract mismatch"
+actual_native_summary="$(node "$TEMP_DIR/scripts/native-tunnel-payloads.mjs" "$TEMP_DIR" summary)"
+expected_native_version="$(json_value "$MANIFEST" native_payload_contract_version)"
+expected_native_sha="$(json_value "$MANIFEST" native_payload_contract_sha256)"
+expected_native_toolchain="$(node -e '
+  const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+  process.stdout.write(JSON.stringify(m.native_toolchain));
+' "$MANIFEST")"
+actual_native_version="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).contract_version)' "$actual_native_summary")"
+actual_native_sha="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).contract_sha256)' "$actual_native_summary")"
+actual_native_toolchain="$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(process.argv[1]).toolchain))' "$actual_native_summary")"
+[[ "$actual_native_version" == "$expected_native_version" ]] || die "Native payload contract version mismatch"
+[[ "$actual_native_sha" == "$expected_native_sha" ]] || die "Native payload contract digest mismatch"
+[[ "$actual_native_toolchain" == "$expected_native_toolchain" ]] || die "Native toolchain provenance mismatch"
 for path in vendor/cloudflared vendor/ngrok-java; do
   actual_submodule_sha="$(git -C "$REPO_ROOT" ls-tree "$LOCAL_SHA" "$path" | awk '{print $3}')"
-  expected_submodule_sha="$(node -e 'process.stdout.write(require(process.argv[1]).submodules[process.argv[2]])' "$MANIFEST" "$path")"
+  expected_submodule_sha="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.submodules[process.argv[2]])' "$MANIFEST" "$path")"
   [[ "$actual_submodule_sha" == "$expected_submodule_sha" ]] ||
     die "Submodule provenance mismatch for $path"
 done
@@ -198,20 +221,64 @@ asset="$(node -e 'process.stdout.write(require(process.argv[1]).assets.find(v=>v
 APK="$RELEASE_DIR/$asset"
 CANDIDATE_CODE="$($APKANALYZER manifest version-code "$APK")"
 if [[ "$APPLY" == false ]]; then
-  printf 'PREVIEW: would install verified %s (%s, versionCode=%s) on [REDACTED_DEVICE_ALIAS] without clearing data\n' \
-    "$TAG" "$VARIANT" "$CANDIDATE_CODE"
+  printf 'PREVIEW: would install verified %s (%s, versionCode=%s) on %s without clearing data\n' \
+    "$TAG" "$VARIANT" "$CANDIDATE_CODE" "$DEVICE"
   exit 0
 fi
 
 if command -v adb >/dev/null 2>&1; then ADB=(adb); elif command -v adb.exe >/dev/null 2>&1; then ADB=(adb.exe); else die "adb is unavailable"; fi
-if [[ -z "$SERIAL" ]]; then
+if [[ -z "$SERIAL" && "$DEVICE" == [REDACTED_DEVICE_ALIAS] ]]; then
   secret_file="$REPO_ROOT/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
   [[ -r "$secret_file" ]] || die "--serial is required"
   SERIAL="$(awk -F= '$1=="ADB_SERIAL" {sub(/^[^=]*=/,""); print; count++} END {if(count!=1) exit 2}' "$secret_file")" ||
     die "Cannot read one ADB_SERIAL assignment"
 fi
+if [[ -z "$SERIAL" && "$DEVICE" == bedroom-tv ]]; then SERIAL="[REDACTED_PRIVATE_ENDPOINT]"; fi
 [[ -n "$SERIAL" && "$SERIAL" != *$'\n'* ]] || die "Invalid ADB serial"
-[[ "$("${ADB[@]}" -s "$SERIAL" get-state 2>/dev/null)" == device ]] || die "[REDACTED_DEVICE_ALIAS] is not an authorized ADB device"
+if [[ "$SERIAL" == *:* ]]; then "${ADB[@]}" connect "$SERIAL" >/dev/null; fi
+[[ "$("${ADB[@]}" -s "$SERIAL" get-state 2>/dev/null)" == device ]] ||
+  die "$DEVICE is not an authorized ADB device"
+
+if [[ "$DEVICE" == bedroom-tv ]]; then
+  manufacturer="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.manufacturer | tr -d '\r')"
+  model="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
+  device_name="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
+  sdk="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"
+  abi_list="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.cpu.abilist | tr -d '\r')"
+  [[ "$manufacturer" == Google && "$model" == "[REDACTED_OWNER_VALUE]" && "$device_name" == kirkwood &&
+     "$sdk" == 34 && "$abi_list" == "armeabi-v7a,armeabi" ]] ||
+    die "Bedroom TV identity or 32-bit userspace contract mismatch"
+  installed_path="$("${ADB[@]}" -s "$SERIAL" shell pm path "$PACKAGE_ID" 2>/dev/null | tr -d '\r')"
+  [[ -z "$installed_path" ]] || die "Bedroom TV first-install path requires the package to be absent"
+  FIRST_INSTALL_SERIAL="$SERIAL"
+  FIRST_INSTALL_ROLLBACK=true
+  "${ADB[@]}" -s "$SERIAL" install "$APK"
+  new_code="$("${ADB[@]}" -s "$SERIAL" shell dumpsys package "$PACKAGE_ID" |
+    sed -n -E 's/.*versionCode=([0-9]+).*/\1/p' | head -1 | tr -d '\r')"
+  [[ "$new_code" == "$CANDIDATE_CODE" ]] || die "Installed versionCode does not match released APK"
+  installed_path="$("${ADB[@]}" -s "$SERIAL" shell pm path "$PACKAGE_ID" |
+    sed -n 's/^package://p' | head -1 | tr -d '\r')"
+  [[ "$installed_path" == /*.apk ]] || die "Cannot locate installed Bedroom TV APK"
+  "${ADB[@]}" -s "$SERIAL" pull "$installed_path" "$TEMP_DIR/bedroom-tv-installed.apk" >/dev/null
+  [[ "$(single_signer "$TEMP_DIR/bedroom-tv-installed.apk")" == "$CERTIFICATE" ]] ||
+    die "Installed Bedroom TV signer differs from the immutable release"
+  primary_abi="$("${ADB[@]}" -s "$SERIAL" shell dumpsys package "$PACKAGE_ID" |
+    sed -n -E 's/.*primaryCpuAbi=([^[:space:]]+).*/\1/p' | head -1 | tr -d '\r')"
+  [[ "$primary_abi" == armeabi-v7a ]] || die "Bedroom TV did not select armeabi-v7a"
+  evidence="$REPO_ROOT/build/device-deployments/bedroom-tv/$(date -u +%Y%m%dT%H%M%SZ).json"
+  mkdir -p "$(dirname "$evidence")"
+  node -e '
+    const fs=require("fs"); const [out,tag,serial,code,cert]=process.argv.slice(1);
+    fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"verified_first_install",device:"bedroom-tv",
+      adb_serial:serial,package_pre_state:"absent",package_id:"com.danielealbano.androidremotecontrolmcp",
+      release_tag:tag,version_code:Number(code),certificate_sha256:cert,primary_cpu_abi:"armeabi-v7a",
+      installed_at:new Date().toISOString()},null,2)+"\n");
+  ' "$evidence" "$TAG" "$SERIAL" "$CANDIDATE_CODE" "$CERTIFICATE"
+  FIRST_INSTALL_ROLLBACK=false
+  printf 'INSTALLED: %s on Bedroom TV; verified first-install evidence: %s\n' "$TAG" "$evidence"
+  exit 0
+fi
+
 installed_code="$("${ADB[@]}" -s "$SERIAL" shell dumpsys package "$PACKAGE_ID" | sed -n -E 's/.*versionCode=([0-9]+).*/\1/p' | head -1 | tr -d '\r')"
 [[ "$installed_code" =~ ^[0-9]+$ ]] || die "Cannot read installed [REDACTED_DEVICE_ALIAS] versionCode"
 (( CANDIDATE_CODE > installed_code )) || die "Candidate versionCode must be greater than installed versionCode"

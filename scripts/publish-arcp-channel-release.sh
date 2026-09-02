@@ -81,10 +81,14 @@ validate_release_assets() {
   [[ -f "$manifest" ]] || return 10
   node -e '
     const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
-    if (m.schema_version!==3 || m.type!=="arcp_channel_release" || m.immutable!==true ||
+    if (m.schema_version!==4 || m.type!=="arcp_channel_release" || m.immutable!==true ||
         !["stable","edge"].includes(m.channel) || m.prerelease!==(m.channel==="edge") ||
         !/^[0-9a-f]{40}$/.test(m.upstream_sha) || !/^[0-9a-f]{40}$/.test(m.local_sha) ||
         m.local_ref!==`release/${m.channel}` || !/^[0-9a-f]{64}$/.test(m.feature_contract_sha256) ||
+        m.native_payload_contract_version!=="android-tunnels-v2" ||
+        !/^[0-9a-f]{64}$/.test(m.native_payload_contract_sha256) ||
+        m.native_toolchain?.go_version!=="1.26.7" ||
+        m.native_toolchain?.android_ndk_version!=="27.2.12479018" || m.native_toolchain?.android_api!==21 ||
         !m.submodules || !["vendor/cloudflared","vendor/ngrok-java"].every(k=>/^[0-9a-f]{40}$/.test(m.submodules[k]||"")) ||
         !/^[0-9a-f]{40}$/.test(m.workflow_source_sha) || !/^[0-9a-f]{64}$/.test(m.certificate_sha256) ||
         m.qualification?.profile!=="arcp_fork_release" ||
