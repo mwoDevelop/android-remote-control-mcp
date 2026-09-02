@@ -1,9 +1,10 @@
-name: Edge Release
+name: Legacy Edge Release (manual only)
 
-# Rolling "edge" pre-release tracking main: on every push to main (i.e. every merged
-# PR), rebuild the four APKs and update the SINGLE existing "edge" release in place —
-# the release is created only on the very first run, never duplicated. Asset filenames
-# are stable so download links never change; only their content and the release body do.
+# Historical rolling "edge" publisher retained for audit and emergency manual use only.
+# It must not run automatically: installable stable/edge artifacts are published by
+# arcp-channel-release.yml under immutable arcp-* identities and the global ledger.
+# This workflow updates the SINGLE legacy "edge" release in place. Asset filenames are
+# stable so download links never change; only their content and the release body do.
 #
 # Safety properties:
 # - The release is always marked --prerelease, so the app's in-app update checker
@@ -28,9 +29,7 @@ name: Edge Release
 #   404); harmless for single-APK installs, unavoidable with the releases API.
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write

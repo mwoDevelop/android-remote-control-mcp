@@ -15,6 +15,9 @@ Common privileged implementations remain in owner packages and the `shizuku-admi
 Historical `upstream-v*` and `upstream-edge` releases are retained only as audit evidence. They omit local features
 and must not be installed on [REDACTED_DEVICE_ALIAS] or [REDACTED_DEVICE_ALIAS].
 
+The mutable legacy `edge` publisher is also retained only for explicit manual recovery/audit. It has no `push` or
+scheduled trigger. New device releases must use the immutable `arcp-*` workflow and version ledger below.
+
 ## Source, version and release contract
 
 The resolver records the official label/SHA, local ref/SHA, exact `vendor/cloudflared` and `vendor/ngrok-java` SHAs,

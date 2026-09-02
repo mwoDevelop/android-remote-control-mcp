@@ -116,7 +116,9 @@ sign_bundle() {
 
 test_workflow_contract() {
   local workflow="$REPO_ROOT/.github/workflows/arcp-channel-release.yml"
+  local legacy_workflow="$REPO_ROOT/.github/workflows/edge-release.yml"
   [[ -f "$workflow" ]]
+  [[ -f "$legacy_workflow" ]]
   ! grep -Eq '^  schedule:' "$workflow"
   grep -Fq 'group: arcp-channel-publication' "$workflow"
   grep -Fq 'environment: arcp-live-tests' "$workflow"
@@ -126,6 +128,8 @@ test_workflow_contract() {
   grep -Fq 'scripts/publish-arcp-channel-release.sh' "$workflow"
   grep -Fq './gradlew :app:testGmsDebugUnitTest --tests' "$workflow"
   ! grep -Fq 'sign-upstream-channel-release.sh' "$workflow"
+  grep -Eq '^  workflow_dispatch:' "$legacy_workflow"
+  ! grep -Eq '^  (push|schedule):' "$legacy_workflow"
   pass 'workflow separates static, live and signing trust boundaries'
 }
 
