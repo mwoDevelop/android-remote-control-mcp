@@ -148,6 +148,20 @@ test_artifact_json_loading_contract() {
   pass 'release verification parses JSON content independently of filename extension'
 }
 
+test_bedroom_tv_absent_package_probe() {
+  local artifact_script="$REPO_ROOT/scripts/arcp-release-artifact.sh" output
+  eval "$(sed -n '/^package_path_or_empty() {/,/^}/p' "$artifact_script")"
+
+  fake_adb() { return 1; }
+  ADB=(fake_adb)
+  SERIAL=bedroom-tv-test
+  PACKAGE_ID=com.example.absent
+
+  output="$(package_path_or_empty)"
+  [[ -z "$output" ]]
+  pass 'Bedroom TV first-install treats an absent package as the expected empty pre-state'
+}
+
 test_sign_and_dry_run() {
   local input="$WORK_ROOT/input" output="$WORK_ROOT/output" dry
   make_inputs "$input"
@@ -217,6 +231,7 @@ touch "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-passw
 chmod 600 "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 test_workflow_contract
 test_artifact_json_loading_contract
+test_bedroom_tv_absent_package_probe
 test_sign_and_dry_run
 test_relative_signing_paths
 test_failures
