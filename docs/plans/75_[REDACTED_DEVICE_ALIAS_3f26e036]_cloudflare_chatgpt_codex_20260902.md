@@ -134,12 +134,12 @@ is no canary tier.
 
 ### Phase 4 — Regression, evidence and delivery
 
-- [ ] Local shared/device validators, `[REDACTED_DEVICE_ALIAS]` bearer smoke, focused release tests and [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] public regressions
-  passed; run and record the main CI required by the final tracked diff after push.
+- [x] Local shared/device validators, `[REDACTED_DEVICE_ALIAS]` bearer smoke, focused release tests and [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] public regressions
+  passed. Main CI run `33652741703` passed all five jobs for implementation commit `c7a20c3`.
 - [x] Audit tracked/staged files for `.env.secrets`, tokens, passwords, cookies, state, APKs and signing material.
 - [x] Update Plan 74 with its final released-APK evidence and this plan with Cloudflare/ChatGPT/Codex IDs and E2E
   results, without secrets.
-- [ ] Commit narrow logical changes, push `main`, wait for CI, and leave the worktree clean. Do not create another APK
+- [x] Commit narrow logical changes, push `main`, wait for CI, and leave the worktree clean. Do not create another APK
   release because this phase changes owner configuration only, not the already released application binary.
 
 ## Rollback
