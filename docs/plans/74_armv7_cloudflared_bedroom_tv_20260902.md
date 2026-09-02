@@ -1,4 +1,4 @@
-<!-- IN PROGRESS — independently reviewed; approved changes are incorporated below. -->
+<!-- COMPLETE — independently reviewed, released and qualified on Bedroom TV. -->
 <!-- Never commit tunnel tokens, bearer credentials, signing material, device identifiers beyond documented model/IP, or generated APKs. -->
 
 # Plan 74 — ARMv7 cloudflared and Bedroom TV edge rollout
@@ -75,7 +75,7 @@ the local MCP origin and the Cloudflare tunnel.
 - [x] Build the pinned ARMv7 cloudflared locally. Verify ELF class/machine/type, EABI, Android linker, dynamic
   dependencies, non-W+X LOAD segments and 16 KiB alignment; execute `cloudflared --version` on Bedroom TV from a
   temporary shell-owned path.
-- [ ] Build and qualify GMS/FOSS edge artifacts through the existing secretless channel path. Confirm the APK contains
+- [x] Build and qualify GMS/FOSS edge artifacts through the existing secretless channel path. Confirm the APK contains
   exactly the required asymmetric tunnel payload and remains owner-signable.
 - [x] Run the normal static, unit/integration and E2E-compile gates; any deterministic failure receives a focused
   regression test before retry.
@@ -87,30 +87,30 @@ including lint, unit/integration tests, E2E compilation and the exact five-entry
 
 ### Phase 4 — Git channel promotion and immutable release
 
-- [ ] Audit tracked files and staged diff for secrets and generated native/APK/signing artifacts.
-- [ ] Commit the reviewed implementation on `main`, push it, and wait for required CI.
-- [ ] Advance `release/edge` through the reviewed `main` lineage. Backport only the common Makefile/contract change to
+- [x] Audit tracked files and staged diff for secrets and generated native/APK/signing artifacts.
+- [x] Commit the reviewed implementation on `main`, push it, and wait for required CI.
+- [x] Advance `release/edge` through the reviewed `main` lineage. Backport only the common Makefile/contract change to
   divergent `release/stable` with `cherry-pick -x` and record patch identity; push only after channel tests and ancestry
   checks pass. Do not publish stable in this rollout.
-- [ ] Run the protected ARCP edge release workflow. Allocate a strictly greater ledger version code and create a new
+- [x] Run the protected ARCP edge release workflow. Allocate a strictly greater ledger version code and create a new
   immutable `arcp-edge-*` identity; never modify or replace the previous release.
-- [ ] Download the published GMS APK into a fresh directory and independently verify assets, hashes, signer, package,
+- [x] Download the published GMS APK into a fresh directory and independently verify assets, hashes, signer, package,
   version, source/submodule SHAs, pinned Go/NDK identities, payload-contract version/digest, feature-contract digest
   and all required native payloads. GMS and FOSS must have identical tunnel matrices and ledger metadata.
 
 ### Phase 5 — Bedroom TV deployment and E2E
 
-- [ ] Reconfirm `Bedroom TV`, IP/ADB identity, API and 32-bit ABI immediately before installation. Refuse a different
+- [x] Reconfirm `Bedroom TV`, IP/ADB identity, API and 32-bit ABI immediately before installation. Refuse a different
   target, signer mismatch, downgrade, incomplete release or skipped mandatory gate.
-- [ ] Deploy with the explicit `bedroom-tv` first-install path, without uninstall/data clearing. Confirm the previously
+- [x] Deploy with the explicit `bedroom-tv` first-install path, without uninstall/data clearing. Confirm the previously
   absent package now has the exact release code and owner signer, Android selected `armeabi-v7a`, and the installed
   `nativeLibraryDir/libcloudflared.so` is ELF32 and is the binary actually executed by the ARCP application UID.
-- [ ] Start ARCP and use a tokenless Cloudflare quick tunnel for this qualification; do not copy [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] credentials.
+- [x] Start ARCP and use a tokenless Cloudflare quick tunnel for this qualification; do not copy [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] credentials.
   Keep the origin loopback-only. Use a temporary random bearer without printing or committing it.
-- [ ] Verify local health, public tunnel health, unauthenticated MCP rejection, authenticated initialize/tools/list,
+- [x] Verify local health, public tunnel health, unauthenticated MCP rejection, authenticated initialize/tools/list,
   and representative non-destructive tools. Accessibility-dependent tests require normal on-device user approval;
   do not bypass Restricted Settings.
-- [ ] Exercise one cloudflared restart/recovery smoke, then confirm the tunnel and origin remain healthy. Finish by
+- [x] Exercise one cloudflared restart/recovery smoke, then confirm the tunnel and origin remain healthy. Finish by
   stopping ARCP/cloudflared, disabling temporary tunnel/autostart, removing or replacing the temporary bearer through
   a documented first-install-safe path, and verifying that no cloudflared PID, quick-tunnel endpoint, ADB forward or
   MCP listener remains. Disconnect the host ADB session but do not change the TV's pre-existing debugging setting.
@@ -118,11 +118,26 @@ including lint, unit/integration tests, E2E compilation and the exact five-entry
 
 ### Phase 6 — Closure
 
-- [ ] Record the final commit, channel refs, workflow run, release tag/version/digests and device test result here,
+- [x] Record the final commit, channel refs, workflow run, release tag/version/digests and device test result here,
   without credentials.
-- [ ] Mark the plan complete only when the downloaded release—not a local APK—passes Bedroom TV E2E.
-- [ ] Commit and push final evidence. If manual Accessibility approval is unavailable, report core/tunnel E2E as
+- [x] Mark the plan complete only when the downloaded release—not a local APK—passes Bedroom TV E2E.
+- [x] Commit and push final evidence. If manual Accessibility approval is unavailable, report core/tunnel E2E as
   complete and accessibility E2E as explicitly pending rather than weakening device security.
+
+Final evidence (2026-09-02): implementation commit `[REDACTED_RESOURCE_ID]`; first-install
+automation fix `5f2c97aae11da77b4fd3958020c26666949b565d`; stable backports `[REDACTED_RESOURCE_ID]`
+and `[REDACTED_RESOURCE_ID]`. Main CI run `33634772450` passed all jobs. Protected release run
+`33636125498` published immutable tag `arcp-edge-16f39717ce09-dda2c531f58d-vc21000002` with ledger
+`versionCode=21000002`; freshly downloaded GMS/FOSS artifacts passed signer, provenance, contract and exact
+five-entry native-payload verification.
+
+The verified first install recorded the absent pre-state, owner certificate and `primaryCpuAbi=armeabi-v7a`. The
+application-owned ELF32 cloudflared process connected successfully. Local and public `/health` returned 200,
+unauthenticated `/mcp` returned 401, authenticated `initialize` and `tools/list` passed with 49
+`android_[REDACTED_DEVICE_ALIAS]_` tools, and controlled stop/start produced a new healthy tunnel. The temporary Quick Tunnel,
+temporary bearer, server, cloudflared process, ADB forward and host ADB session were removed/stopped. Accessibility
+was not granted; its representative tool returned the expected controlled permission error. The released APK remains
+installed. Persistent connectivity is intentionally a separate reviewed rollout in Plan 75.
 
 ## Rollback
 
