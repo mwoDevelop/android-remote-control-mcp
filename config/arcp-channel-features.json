@@ -107,12 +107,7 @@
     "shizuku_user_service_permission",
     "restricted_settings_not_bypassed"
   ],
-  "required_native_payloads": [
-    "arm64-v8a/libcloudflared.so",
-    "arm64-v8a/libngrok_java.so",
-    "x86_64/libcloudflared.so",
-    "x86_64/libngrok_java.so"
-  ],
+  "native_payload_contract": "config/arcp-native-payloads.json",
   "stable_security_backports": [
     {
       "upstream_commit": "4d1efbd",

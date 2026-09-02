@@ -3,6 +3,7 @@ set -euo pipefail
 
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_SCRIPT="$(cd -- "$TEST_DIR/.." && pwd)/sync-build-deploy.sh"
+SOURCE_REPO_ROOT="$(cd -- "$TEST_DIR/../.." && pwd)"
 PASSED=0
 WORK_ROOT="$(mktemp -d)"
 
@@ -509,22 +510,48 @@ test_production_listener_safety() {
 }
 
 test_tunnel_payload_gate() {
-  local output status
-  eval "$(sed -n '/^validate_tunnel_payload() {/,/^}/p' "$SOURCE_SCRIPT")"
+  local all_entries entry output status
+  # shellcheck source=../lib/native-tunnel-payloads.sh
+  REPO_ROOT="$SOURCE_REPO_ROOT"
+  source "$SOURCE_REPO_ROOT/scripts/lib/native-tunnel-payloads.sh"
   die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
   require_command() { :; }
   unzip() { printf '%s\n' "$TEST_APK_ENTRIES"; }
 
-  TEST_APK_ENTRIES=$'lib/arm64-v8a/libcloudflared.so\nlib/arm64-v8a/libngrok_java.so\nlib/x86_64/libcloudflared.so\nlib/x86_64/libngrok_java.so'
-  validate_tunnel_payload test.apk
+  all_entries=$'lib/arm64-v8a/libcloudflared.so\nlib/armeabi-v7a/libcloudflared.so\nlib/x86_64/libcloudflared.so\nlib/arm64-v8a/libngrok_java.so\nlib/x86_64/libngrok_java.so'
+  TEST_APK_ENTRIES="$all_entries"
+  validate_native_tunnel_payload test.apk
 
-  TEST_APK_ENTRIES=$'lib/arm64-v8a/libcloudflared.so\nlib/arm64-v8a/libngrok_java.so\nlib/x86_64/libcloudflared.so'
+  while IFS= read -r entry; do
+    TEST_APK_ENTRIES="$(grep -Fxv "$entry" <<<"$all_entries")"
+    set +e
+    output="$( (validate_native_tunnel_payload test.apk) 2>&1 )"
+    status=$?
+    set -e
+    [[ $status -ne 0 && "$output" == *"$entry"* ]]
+  done <<<"$all_entries"
+
+  TEST_APK_ENTRIES=$'lib/arm64-v8a/libcloudflared.so\nlib/armeabi-v7a/libcloudflared.so\nlib/x86_64/libcloudflared.so\nlib/arm64-v8a/libngrok_java.so\nlib/armeabi-v7a/libngrok_java.so\nlib/x86_64/libngrok_java.so'
   set +e
-  output="$( (validate_tunnel_payload test.apk) 2>&1 )"
+  output="$( (validate_native_tunnel_payload test.apk) 2>&1 )"
   status=$?
   set -e
-  [[ $status -ne 0 && "$output" == *'lib/x86_64/libngrok_java.so'* ]]
-  pass "qualified builds require Cloudflare and ngrok payloads for both supported ABIs"
+  [[ $status -ne 0 && "$output" == *'unsupported tunnel payload'*'lib/armeabi-v7a/libngrok_java.so'* ]]
+  pass "qualified builds enforce the asymmetric Cloudflare and ngrok ABI contract"
+}
+
+test_armv7_cloudflared_build_and_cache_contract() {
+  local workflow
+  grep -Fq 'GOARCH=arm GOARM=7' "$SOURCE_REPO_ROOT/Makefile"
+  grep -Fq 'armv7a-linux-androideabi21-clang' "$SOURCE_REPO_ROOT/Makefile"
+  grep -Fq 'armeabi-v7a/libcloudflared.so' "$SOURCE_REPO_ROOT/Makefile"
+  for workflow in ci.yml edge-release.yml release.yml; do
+    grep -Fq 'app/src/main/jniLibs/armeabi-v7a/libcloudflared.so' "$SOURCE_REPO_ROOT/.github/workflows/$workflow"
+    grep -Eq "key: cloudflared-android-v[0-9]+-.*hashFiles\([^)]*Makefile[^)]*config/arcp-native-payloads.json" \
+      "$SOURCE_REPO_ROOT/.github/workflows/$workflow"
+    grep -Fq 'Verify cloudflared Android native cache contract' "$SOURCE_REPO_ROOT/.github/workflows/$workflow"
+  done
+  pass "ARMv7 cloudflared and stale-cache recovery are part of every runnable native workflow"
 }
 
 test_apksigner_digest_compatibility() {
@@ -586,6 +613,7 @@ test_secret_reader_does_not_execute_or_export_pin
 test_ngrok_test_token_resolution
 test_production_listener_safety
 test_tunnel_payload_gate
+test_armv7_cloudflared_build_and_cache_contract
 test_apksigner_digest_compatibility
 
 printf '1..%d\n' "$PASSED"

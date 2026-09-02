@@ -10,6 +10,7 @@ WORK_ROOT="$(mktemp -d)"
 FAKE_BIN="$WORK_ROOT/bin"
 CERTIFICATE_SHA256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 FEATURE_SHA256="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+NATIVE_SHA256="$(node "$REPO_ROOT/scripts/native-tunnel-payloads.mjs" "$REPO_ROOT" hash)"
 UPSTREAM_SHA="2222222222222222222222222222222222222222"
 LOCAL_SHA="3333333333333333333333333333333333333333"
 VERSION_CODE=21000000
@@ -61,7 +62,7 @@ make_fake_tools() {
     'args=("$@")' \
     'cp "${args[${#args[@]}-2]}" "${args[${#args[@]}-1]}"' > "$FAKE_BIN/zipalign"
   printf '%s\n' '#!/usr/bin/env bash' \
-    'printf "%s\\n" lib/arm64-v8a/libcloudflared.so lib/arm64-v8a/libngrok_java.so lib/x86_64/libcloudflared.so lib/x86_64/libngrok_java.so' \
+    'printf "%s\\n" lib/arm64-v8a/libcloudflared.so lib/armeabi-v7a/libcloudflared.so lib/x86_64/libcloudflared.so lib/arm64-v8a/libngrok_java.so lib/x86_64/libngrok_java.so' \
     > "$FAKE_BIN/unzip"
   chmod +x "$FAKE_BIN"/*
 }
@@ -75,10 +76,13 @@ make_inputs() {
     raw_sha="$(sha256sum "$directory/$raw" | awk '{print $1}')"
     node -e '
       const fs=require("fs");
-      const [out,variant,asset,sha,upstreamSha,localSha,featureSha]=process.argv.slice(1);
-      fs.writeFileSync(out,JSON.stringify({schema_version:3,type:"arcp_channel_pre_sign",channel:"edge",
+      const [out,variant,asset,sha,upstreamSha,localSha,featureSha,nativeSha]=process.argv.slice(1);
+      fs.writeFileSync(out,JSON.stringify({schema_version:4,type:"arcp_channel_pre_sign",channel:"edge",
         upstream_label:"edge",upstream_sha:upstreamSha,local_ref:"release/edge",local_sha:localSha,
-        feature_contract_sha256:featureSha,submodules:{"vendor/cloudflared":"4444444444444444444444444444444444444444",
+        feature_contract_sha256:featureSha,native_payload_contract_version:"android-tunnels-v2",
+        native_payload_contract_sha256:nativeSha,
+        native_toolchain:{go_version:"1.26.7",android_ndk_version:"27.2.12479018",android_api:21},
+        submodules:{"vendor/cloudflared":"4444444444444444444444444444444444444444",
           "vendor/ngrok-java":"5555555555555555555555555555555555555555"},variant,
         source_repository:"https://github.com/mwoDevelop/android-remote-control-mcp",
         upstream_repository:"https://github.com/danielealbano/android-remote-control-mcp",
@@ -88,7 +92,7 @@ make_inputs() {
         application_id:"com.danielealbano.androidremotecontrolmcp",version_code:21000000,
         version_name:"arcp.edge.1.12.0.333333333333.r1",certificate_sha256:null},null,2)+"\n");
     ' "$directory/manifest-${variant}-${UPSTREAM_SHA:0:12}-${LOCAL_SHA:0:12}.json" "$variant" "$raw" \
-      "$raw_sha" "$UPSTREAM_SHA" "$LOCAL_SHA" "$FEATURE_SHA256"
+      "$raw_sha" "$UPSTREAM_SHA" "$LOCAL_SHA" "$FEATURE_SHA256" "$NATIVE_SHA256"
   done
   node -e '
     const fs=require("fs"), [out,u,l]=process.argv.slice(1);
@@ -138,6 +142,9 @@ test_artifact_json_loading_contract() {
   [[ -f "$artifact_script" ]]
   ! grep -Eq 'require\(process\.argv\[[12]\]\)' "$artifact_script"
   grep -Fq 'JSON.parse(fs.readFileSync(process.argv[1],"utf8"))' "$artifact_script"
+  grep -Fq 'bedroom-tv' "$artifact_script"
+  grep -Fq 'package_pre_state:"absent"' "$artifact_script"
+  grep -Fq 'FIRST_INSTALL_ROLLBACK=true' "$artifact_script"
   pass 'release verification parses JSON content independently of filename extension'
 }
 
@@ -166,13 +173,21 @@ test_relative_signing_paths() {
 }
 
 test_failures() {
-  local input="$WORK_ROOT/bad-input" output="$WORK_ROOT/bad-output"
+  local input="$WORK_ROOT/bad-input" output="$WORK_ROOT/bad-output" native_input="$WORK_ROOT/native-input"
   make_inputs "$input"
   expect_failure 'wrong signer is rejected' 'Signer certificate mismatch' \
     sign_bundle "$input" "$output" cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   printf 'unexpected\n' > "$input/extra.txt"
   expect_failure 'extra pre-sign asset is rejected' 'exactly four files' \
     sign_bundle "$input" "$WORK_ROOT/extra-output"
+  make_inputs "$native_input"
+  node -e '
+    const fs=require("fs"), file=process.argv[1], m=JSON.parse(fs.readFileSync(file,"utf8"));
+    m.native_payload_contract_sha256="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    fs.writeFileSync(file,JSON.stringify(m)+"\n");
+  ' "$native_input/manifest-gmsRelease-${UPSTREAM_SHA:0:12}-${LOCAL_SHA:0:12}.json"
+  expect_failure 'untrusted native payload provenance is rejected' 'Native payload contract provenance differs' \
+    sign_bundle "$native_input" "$WORK_ROOT/native-output"
   pass 'failure paths remain closed'
 }
 

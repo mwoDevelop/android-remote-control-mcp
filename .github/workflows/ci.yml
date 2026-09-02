@@ -197,8 +197,9 @@ jobs:
         with:
           path: |
             app/src/main/jniLibs/arm64-v8a/libcloudflared.so
+            app/src/main/jniLibs/armeabi-v7a/libcloudflared.so
             app/src/main/jniLibs/x86_64/libcloudflared.so
-          key: cloudflared-android-${{ runner.os }}-${{ hashFiles('.gitmodules', 'vendor/cloudflared/**/*.go', 'vendor/cloudflared/go.sum') }}
+          key: cloudflared-android-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'config/arcp-native-payloads.json', '.gitmodules', 'vendor/cloudflared/**/*.go', 'vendor/cloudflared/go.sum') }}
 
       - name: Cache ngrok-java Android native
         id: cache-ngrok-android
@@ -211,11 +212,25 @@ jobs:
             vendor/ngrok-java/ngrok-java-native/target/ngrok-java-native-classes.jar
           key: ngrok-android-v2-${{ runner.os }}-${{ hashFiles('.gitmodules', 'vendor/ngrok-java/**/*.toml', 'vendor/ngrok-java/**/pom.xml', 'vendor/ngrok-java/ngrok-java-native/src/**') }}
 
+      - name: Verify cloudflared Android native cache contract
+        id: verify-cloudflared-cache
+        shell: bash
+        run: |
+          if [[ -f app/src/main/jniLibs/arm64-v8a/libcloudflared.so && \
+                -f app/src/main/jniLibs/armeabi-v7a/libcloudflared.so && \
+                -f app/src/main/jniLibs/x86_64/libcloudflared.so ]]; then
+            echo 'valid=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'valid=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Go
-        if: steps.cache-cloudflared.outputs.cache-hit != 'true'
         uses: actions/setup-go@v7
         with:
           go-version: '1.26.7'
+
+      - name: Install pinned Android NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" >/dev/null
 
       - name: Set up Rust
         if: steps.cache-ngrok-android.outputs.cache-hit != 'true'
@@ -227,7 +242,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Compile cloudflared for Android
-        if: steps.cache-cloudflared.outputs.cache-hit != 'true'
+        if: steps.cache-cloudflared.outputs.cache-hit != 'true' || steps.verify-cloudflared-cache.outputs.valid != 'true'
         run: make compile-cloudflared
 
       - name: Compile ngrok-java native for Android
@@ -353,8 +368,9 @@ jobs:
         with:
           path: |
             app/src/main/jniLibs/arm64-v8a/libcloudflared.so
+            app/src/main/jniLibs/armeabi-v7a/libcloudflared.so
             app/src/main/jniLibs/x86_64/libcloudflared.so
-          key: cloudflared-android-${{ runner.os }}-${{ hashFiles('.gitmodules', 'vendor/cloudflared/**/*.go', 'vendor/cloudflared/go.sum') }}
+          key: cloudflared-android-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'config/arcp-native-payloads.json', '.gitmodules', 'vendor/cloudflared/**/*.go', 'vendor/cloudflared/go.sum') }}
 
       - name: Cache ngrok-java Android native
         id: cache-ngrok-android
@@ -367,11 +383,25 @@ jobs:
             vendor/ngrok-java/ngrok-java-native/target/ngrok-java-native-classes.jar
           key: ngrok-android-v2-${{ runner.os }}-${{ hashFiles('.gitmodules', 'vendor/ngrok-java/**/*.toml', 'vendor/ngrok-java/**/pom.xml', 'vendor/ngrok-java/ngrok-java-native/src/**') }}
 
+      - name: Verify cloudflared Android native cache contract
+        id: verify-cloudflared-cache
+        shell: bash
+        run: |
+          if [[ -f app/src/main/jniLibs/arm64-v8a/libcloudflared.so && \
+                -f app/src/main/jniLibs/armeabi-v7a/libcloudflared.so && \
+                -f app/src/main/jniLibs/x86_64/libcloudflared.so ]]; then
+            echo 'valid=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'valid=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Go
-        if: steps.cache-cloudflared.outputs.cache-hit != 'true'
         uses: actions/setup-go@v7
         with:
           go-version: '1.26.7'
+
+      - name: Install pinned Android NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" >/dev/null
 
       - name: Set up Rust
         if: steps.cache-ngrok-android.outputs.cache-hit != 'true'
@@ -383,7 +413,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Compile cloudflared for Android
-        if: steps.cache-cloudflared.outputs.cache-hit != 'true'
+        if: steps.cache-cloudflared.outputs.cache-hit != 'true' || steps.verify-cloudflared-cache.outputs.valid != 'true'
         run: make compile-cloudflared
 
       - name: Compile ngrok-java native for Android

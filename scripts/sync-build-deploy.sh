@@ -537,7 +537,7 @@ channel_info() {
 
 build_upstream_channel() (
   local channel label source_sha short_sha local_ref local_sha local_short_sha channel_temp_dir channel_worktree
-  local final_label final_sha final_local_ref final_local_sha feature_contract_sha submodules_json
+  local final_label final_sha final_local_ref final_local_sha feature_contract_sha submodules_json native_payload_json
   local source_apk output_dir output_apk output_manifest sha metadata qualified signed output_suffix manifest_type
   local child_manifest test_retry_occurred=false
   local -a child_args child_manifests
@@ -566,6 +566,8 @@ build_upstream_channel() (
   git -C "$channel_worktree" submodule update --init --recursive
   feature_contract_sha="$(node "$SCRIPT_DIR/verify-arcp-channel-features.mjs" "$channel_worktree" "$channel" hash)" ||
     die "ARCP owner feature contract failed for $channel"
+  native_payload_json="$(node "$channel_worktree/scripts/native-tunnel-payloads.mjs" "$channel_worktree" summary)" ||
+    die "ARCP native payload contract failed for $channel"
   submodules_json="$(git -C "$channel_worktree" submodule status --recursive | node -e '
     const fs=require("fs"), result={};
     for (const line of fs.readFileSync(0,"utf8").trim().split("\n").filter(Boolean)) {
@@ -631,12 +633,15 @@ build_upstream_channel() (
   fi
   node -e '
     const fs=require("fs");
-    const [out,type,channel,label,upstreamSha,localRef,localSha,featureContract,submodulesJson,variant,qualified,signed,testRetry,apk,sha,metadata]=process.argv.slice(1);
+    const [out,type,channel,label,upstreamSha,localRef,localSha,featureContract,submodulesJson,nativePayloadJson,variant,qualified,signed,testRetry,apk,sha,metadata]=process.argv.slice(1);
     const [applicationId,versionCode,versionName,certificateSha256]=metadata.split("\t");
-    fs.writeFileSync(out,JSON.stringify({schema_version:3,type,
+    const nativePayload=JSON.parse(nativePayloadJson);
+    fs.writeFileSync(out,JSON.stringify({schema_version:4,type,
       created_at:new Date().toISOString(),channel,upstream_label:label,upstream_sha:upstreamSha,
       local_ref:localRef,local_sha:localSha,feature_contract_sha256:featureContract,
-      submodules:JSON.parse(submodulesJson),variant,
+      native_payload_contract_version:nativePayload.contract_version,
+      native_payload_contract_sha256:nativePayload.contract_sha256,
+      native_toolchain:nativePayload.toolchain,submodules:JSON.parse(submodulesJson),variant,
       upstream_repository:"https://github.com/danielealbano/android-remote-control-mcp",
       source_repository:"https://github.com/mwoDevelop/android-remote-control-mcp",
       qualified:qualified==="true",mandatory_gates_skipped:qualified!=="true",
@@ -646,7 +651,7 @@ build_upstream_channel() (
       sha256:sha,application_id:applicationId,version_code:Number(versionCode),version_name:versionName,
       certificate_sha256:certificateSha256||null},null,2)+"\n");
   ' "$output_manifest" "$manifest_type" "$channel" "$label" "$source_sha" "$local_ref" "$local_sha" \
-    "$feature_contract_sha" "$submodules_json" "$VARIANT" "$qualified" "$signed" "$test_retry_occurred" \
+    "$feature_contract_sha" "$submodules_json" "$native_payload_json" "$VARIANT" "$qualified" "$signed" "$test_retry_occurred" \
     "$(basename "$output_apk")" "$sha" "$metadata"
   printf 'Latest %s ARCP build complete: upstream=%s/%s local=%s/%s\nAPK: %s\nManifest: %s\n' \
     "$channel" "$label" "$source_sha" "$local_ref" "$local_sha" "$output_apk" "$output_manifest"
@@ -669,7 +674,9 @@ prepare_host_cloudflared() {
 
 prepare_go_toolchain() {
   local host_tools_dir go_root temporary_dir container_id=""
-  if command -v go >/dev/null 2>&1; then return; fi
+  if command -v go >/dev/null 2>&1 && [[ "$(go version)" == "go version go$BOOTSTRAP_GO_VERSION "* ]]; then
+    return
+  fi
 
   require_command docker
   host_tools_dir="$REPO_ROOT/build/host-tools"
@@ -725,15 +732,9 @@ prepare_native_tunnel_payload() {
 }
 
 validate_tunnel_payload() {
-  local apk="$1" entries abi library
-  require_command unzip
-  entries="$(unzip -Z1 "$apk")"
-  for abi in arm64-v8a x86_64; do
-    for library in libcloudflared.so libngrok_java.so; do
-      grep -Fxq "lib/$abi/$library" <<<"$entries" ||
-        die "APK is missing required tunnel payload: lib/$abi/$library"
-    done
-  done
+  # shellcheck source=lib/native-tunnel-payloads.sh
+  source "$SCRIPT_DIR/lib/native-tunnel-payloads.sh"
+  validate_native_tunnel_payload "$1"
 }
 
 validate_admin_ui_manifest() {

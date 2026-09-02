@@ -323,10 +323,12 @@ version-bump-major: ## Bump major version (1.0.0 -> 2.0.0)
 # Native Binary Compilation (cloudflared + ngrok)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# NDK root auto-detection: check ANDROID_HOME/ndk first, then brew cask location
+# Native release contract: do not silently move to a different NDK.
+ANDROID_NDK_VERSION := 27.2.12479018
+# NDK root auto-detection: check the pinned SDK package first, then brew cask location.
 NDK_ROOT := $(shell \
-	if [ -d "$(ANDROID_HOME)/ndk" ] && ls "$(ANDROID_HOME)/ndk" 2>/dev/null | grep -q .; then \
-		ls -d "$(ANDROID_HOME)/ndk"/*/ 2>/dev/null | sort -V | tail -1; \
+	if [ -d "$(ANDROID_HOME)/ndk/$(ANDROID_NDK_VERSION)" ]; then \
+		echo "$(ANDROID_HOME)/ndk/$(ANDROID_NDK_VERSION)"; \
 	elif [ -d "/opt/homebrew/Caskroom/android-ndk" ]; then \
 		NDK_VER=$$(ls /opt/homebrew/Caskroom/android-ndk/ | sort -V | tail -1); \
 		APP_DIR=$$(ls -d "/opt/homebrew/Caskroom/android-ndk/$$NDK_VER/"*.app 2>/dev/null | head -1); \
@@ -344,9 +346,17 @@ compile-cloudflared: ## Cross-compile cloudflared for Android (requires Go + And
 		exit 1; \
 	fi
 	@if [ ! -d "$(NDK_ROOT)" ]; then \
-		echo "ERROR: Android NDK not found."; \
+		echo "ERROR: pinned Android NDK $(ANDROID_NDK_VERSION) not found."; \
 		echo "Install via: brew install --cask android-ndk"; \
-		echo "Or install via SDK Manager: sdkmanager \"ndk;27.2.12479018\""; \
+		echo "Or install via SDK Manager: sdkmanager \"ndk;$(ANDROID_NDK_VERSION)\""; \
+		exit 1; \
+	fi
+	@if [ "$$(sed -n -E 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$(NDK_ROOT)/source.properties" | head -1)" != "$(ANDROID_NDK_VERSION)" ]; then \
+		echo "ERROR: Android NDK at $(NDK_ROOT) is not version $(ANDROID_NDK_VERSION)."; \
+		exit 1; \
+	fi
+	@if [ "$$(go env GOVERSION)" != "go1.26.7" ]; then \
+		echo "ERROR: cloudflared Android builds require Go 1.26.7; found $$(go env GOVERSION)."; \
 		exit 1; \
 	fi
 	@echo "Compiling cloudflared from submodule ($(CLOUDFLARED_SRC_DIR))..."
@@ -361,6 +371,15 @@ compile-cloudflared: ## Cross-compile cloudflared for Android (requires Go + And
 		-o $(CURDIR)/$(CLOUDFLARED_JNILIBS_DIR)/arm64-v8a/libcloudflared.so \
 		./cmd/cloudflared
 	@echo ""
+	@echo "Compiling cloudflared for armeabi-v7a..."
+	mkdir -p $(CLOUDFLARED_JNILIBS_DIR)/armeabi-v7a
+	cd $(CLOUDFLARED_SRC_DIR) && \
+		CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 \
+		CC=$(NDK_BIN)/armv7a-linux-androideabi21-clang \
+		go build -a -installsuffix cgo -ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384" \
+		-o $(CURDIR)/$(CLOUDFLARED_JNILIBS_DIR)/armeabi-v7a/libcloudflared.so \
+		./cmd/cloudflared
+	@echo ""
 	@echo "Compiling cloudflared for x86_64..."
 	mkdir -p $(CLOUDFLARED_JNILIBS_DIR)/x86_64
 	cd $(CLOUDFLARED_SRC_DIR) && \
@@ -370,7 +389,7 @@ compile-cloudflared: ## Cross-compile cloudflared for Android (requires Go + And
 		-o $(CURDIR)/$(CLOUDFLARED_JNILIBS_DIR)/x86_64/libcloudflared.so \
 		./cmd/cloudflared
 	@echo ""
-	@echo "cloudflared compiled successfully for arm64-v8a and x86_64"
+	@echo "cloudflared compiled successfully for arm64-v8a, armeabi-v7a and x86_64"
 
 NGROK_SRC_DIR := vendor/ngrok-java
 NGROK_NATIVE_DIR := $(NGROK_SRC_DIR)/ngrok-java-native
