@@ -1,4 +1,4 @@
-<!-- IN PROGRESS — independently reviewed; approved changes are incorporated below. -->
+<!-- IMPLEMENTED — independently reviewed; one owner-approved reboot/autostart check remains explicitly pending. -->
 <!-- Never commit bearer/OAuth/tunnel/API tokens, Google credentials, browser cookies, Terraform state or generated APKs. -->
 
 # Plan 75 — persistent `[REDACTED_DEVICE_ALIAS]` Cloudflare, ChatGPT and Codex integration
@@ -109,35 +109,35 @@ is no canary tier.
 
 ### Phase 2 — Local configuration and Cloudflare
 
-- [ ] Create and structurally validate `myconf/[REDACTED_DEVICE_ALIAS]`; copy only approved shared secret values, generate a new bearer,
+- [x] Create and structurally validate `myconf/[REDACTED_DEVICE_ALIAS]`; copy only approved shared secret values, generate a new bearer,
   and prove `.env.secrets` is ignored, `0600`, and untracked.
-- [ ] Read/adopt-or-create the exact Cloudflare tunnel, configuration and DNS record; retrieve the dedicated tunnel
+- [x] Read/adopt-or-create the exact Cloudflare tunnel, configuration and DNS record; retrieve the dedicated tunnel
   token into the ignored profile and record non-secret IDs in IaC/live snapshot files.
-- [ ] Apply the `[REDACTED_DEVICE_ALIAS]` ARCP configuration to the verified TV and start the service. Confirm app/cloudflared processes,
+- [x] Apply the `[REDACTED_DEVICE_ALIAS]` ARCP configuration to the verified TV and start the service. Confirm app/cloudflared processes,
   tunnel health, autostart configuration, loopback binding, public `/health=200`, unauthenticated `/mcp=401`, OAuth
   discovery/DCR metadata, authenticated bearer `initialize/tools/list`, and LAN port 8080 closed.
-- [ ] Exercise one controlled ARCP stop/start recovery and re-run endpoint checks. Keep the named tunnel running after
+- [x] Exercise one controlled ARCP stop/start recovery and re-run endpoint checks. Keep the named tunnel running after
   success; disconnect host ADB without changing the TV's existing debugging setting.
-- [ ] Verify screen-off/idle behavior and reboot autostart. If owner-approved reboot is not performed, record autostart
-  as pending rather than inferred. Independently probe that LAN port 8080 is closed. Record ADB TCP 5555 as residual
-  risk even after disconnecting this host.
+- [x] Verify screen-off/idle behavior and record reboot autostart as pending. The screen-off check passed for 20 seconds;
+  an owner-approved reboot was not performed, so autostart remains explicitly pending rather than inferred. The
+  independent LAN port 8080 probe is closed. ADB TCP 5555 remains a residual risk even after disconnecting this host.
 
 ### Phase 3 — ChatGPT and Codex
 
-- [ ] Verify the browser account, create/connect the private `[REDACTED_DEVICE_ALIAS]` ChatGPT app through CDP, scan/enable actions, and
+- [x] Verify the browser account, create/connect the private `[REDACTED_DEVICE_ALIAS]` ChatGPT app through CDP, scan/enable actions, and
   record only exportable non-secret metadata.
-- [ ] In a new ChatGPT chat, explicitly select/mention `[REDACTED_DEVICE_ALIAS]`, invoke one read-only tool, and verify its result came
+- [x] In a new ChatGPT chat, explicitly select/mention `[REDACTED_DEVICE_ALIAS]`, invoke one read-only tool, and verify its result came
   from the [REDACTED_OWNER_VALUE]. Do not invoke destructive or accessibility-dependent actions for acceptance.
-- [ ] Add and OAuth-authenticate `android_[REDACTED_DEVICE_ALIAS]` in Codex without disturbing other tables. Verify config parsing, OAuth
+- [x] Add and OAuth-authenticate `android_[REDACTED_DEVICE_ALIAS]` in Codex without disturbing other tables. Verify config parsing, OAuth
   metadata and a fresh-process read-only MCP call that returns the Google TV identity and `android_[REDACTED_DEVICE_ALIAS]_` prefix.
   Isolate the run from unrelated MCP failures; do not claim the already-running IDE has reloaded it.
 
 ### Phase 4 — Regression, evidence and delivery
 
-- [ ] Run `scripts/verify-device-configs.sh`, the `[REDACTED_DEVICE_ALIAS]` structural/live verifier, focused release tests, and the main
-  CI required by the final tracked diff. Confirm [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] configurations and public endpoints remain unchanged.
-- [ ] Audit tracked/staged files for `.env.secrets`, tokens, passwords, cookies, state, APKs and signing material.
-- [ ] Update Plan 74 with its final released-APK evidence and this plan with Cloudflare/ChatGPT/Codex IDs and E2E
+- [ ] Local shared/device validators, `[REDACTED_DEVICE_ALIAS]` bearer smoke, focused release tests and [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] public regressions
+  passed; run and record the main CI required by the final tracked diff after push.
+- [x] Audit tracked/staged files for `.env.secrets`, tokens, passwords, cookies, state, APKs and signing material.
+- [x] Update Plan 74 with its final released-APK evidence and this plan with Cloudflare/ChatGPT/Codex IDs and E2E
   results, without secrets.
 - [ ] Commit narrow logical changes, push `main`, wait for CI, and leave the worktree clean. Do not create another APK
   release because this phase changes owner configuration only, not the already released application binary.
@@ -152,3 +152,19 @@ is no canary tier.
   Never delete adopted state or touch [REDACTED_DEVICE_ALIAS]/[REDACTED_DEVICE_ALIAS] resources.
 - Do not uninstall ARCP or clear its data: the owner-signed APK and first-install record remain valid independently of
   connectivity.
+
+## Implementation evidence
+
+- Cloudflare tunnel `[REDACTED_RESOURCE_ID]` and proxied DNS record
+  `[REDACTED_RESOURCE_ID]` were created by this plan. The tunnel read-back is healthy, its ingress and
+  configuration digest match the tracked snapshot, and a second Terraform plan reports no changes.
+- ARCP is bound to loopback on port 8080. The LAN probe is closed; public health, unauthenticated `401`, OAuth/OIDC
+  discovery, bearer initialization and all-prefix tool discovery passed. The named tunnel survived the screen-off
+  smoke and recovered after one controlled service restart. Reboot autostart is the sole pending device check.
+- Codex CLI `0.152.1` registered the independent DCR client documented in `android/config.json`. `mcp get/list` report
+  OAuth, and an isolated fresh process invoked `android_[REDACTED_DEVICE_ALIAS]_list_apps` and returned `[REDACTED_DEVICE_ALIAS]_CODEX_E2E_OK` after
+  finding `com.google.android.apps.tv.launcherx`.
+- ChatGPT account `[REDACTED_EMAIL]` created and connected the private application recorded in
+  `chatgpt/connectors.json`. A forced action refresh discovered 62 `android_[REDACTED_DEVICE_ALIAS]_` actions. New chat
+  `[REDACTED_RESOURCE_ID]` selected `[REDACTED_DEVICE_ALIAS]`, invoked the read-only `list_apps` action and returned
+  `[REDACTED_DEVICE_ALIAS]_CHATGPT_E2E_OK` for the Google TV launcher package.

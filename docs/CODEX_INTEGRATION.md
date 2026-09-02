@@ -147,11 +147,20 @@ default_tools_approval_mode = "approve"
 [mcp_servers.android_[REDACTED_DEVICE_ALIAS]]
 url = "[REDACTED_OWNER_VALUE]"
 default_tools_approval_mode = "approve"
+
+[mcp_servers.android_[REDACTED_DEVICE_ALIAS]]
+url = "[REDACTED_OWNER_VALUE]"
+enabled = true
+required = false
+default_tools_approval_mode = "prompt"
+tool_timeout_sec = 120
 ```
 
 There is no `enabled_tools` allow list or `disabled_tools` deny list, so Codex
 loads every tool exposed by each server. OAuth credentials are stored separately
 by Codex after `codex mcp login`; they must not be copied into this file.
+The shared-TV profile deliberately keeps per-call confirmation enabled even though
+the two personally controlled phone profiles use the broader automatic mode.
 
 Put the entry in `~/.codex/config.toml` when the phone should be available to all
 Codex projects for the current user. To limit access to one trusted repository,

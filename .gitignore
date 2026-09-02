@@ -18,6 +18,12 @@ captures/
 local.properties
 keystore.properties
 
+# Terraform working state and saved plans (may contain sensitive provider data)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
 # Keystores (sensitive)
 *.jks
 *.keystore

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-DEVICES=([REDACTED_DEVICE_ALIAS] [REDACTED_DEVICE_ALIAS])
+DEVICES=([REDACTED_DEVICE_ALIAS] [REDACTED_DEVICE_ALIAS] [REDACTED_DEVICE_ALIAS])
 
 for device in "${DEVICES[@]}"; do
   "${REPO_ROOT}/myconf/${device}/scripts/verify.sh"
@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = process.env.REPO_ROOT;
-const devices = ['[REDACTED_DEVICE_ALIAS]', '[REDACTED_DEVICE_ALIAS]'];
+const devices = ['[REDACTED_DEVICE_ALIAS]', '[REDACTED_DEVICE_ALIAS]', '[REDACTED_DEVICE_ALIAS]'];
 const commonFiles = [
   '.env.example',
   '.env.secrets',
@@ -22,7 +22,6 @@ const commonFiles = [
   'snapshot.json',
   'android/config.json',
   'android/apply-config.sh',
-  'android/provision-unlock-pin.sh',
   'chatgpt/connectors.json',
   'cloudflare/.terraform.lock.hcl',
   'cloudflare/imports.tf',
@@ -31,9 +30,9 @@ const commonFiles = [
   'cloudflare/outputs.tf',
   'cloudflare/variables.tf',
   'cloudflare/versions.tf',
-  'regery/domain.json',
   'scripts/verify.sh'
 ];
+const phoneOnlyFiles = ['android/provision-unlock-pin.sh', 'regery/domain.json'];
 
 const contracts = {
   'snapshot.json': [
@@ -54,9 +53,6 @@ const contracts = {
   'cloudflare/live-snapshot.json': [
     'schema_version', 'captured_at', 'account', 'zone', 'dns_records', 'tunnel'
   ],
-  'regery/domain.json': [
-    'schema_version', 'captured_at', 'account', 'domain', 'restore_method'
-  ]
 };
 
 function fail(message) {
@@ -69,6 +65,11 @@ for (const device of devices) {
   for (const relative of commonFiles) {
     if (!fs.existsSync(path.join(deviceRoot, relative))) {
       fail(`${device} is missing common file ${relative}`);
+    }
+  }
+  if (device !== '[REDACTED_DEVICE_ALIAS]') {
+    for (const relative of phoneOnlyFiles) {
+      if (!fs.existsSync(path.join(deviceRoot, relative))) fail(`${device} is missing phone-only file ${relative}`);
     }
   }
 
@@ -97,15 +98,21 @@ for (const device of devices) {
   }
 
   const applyScript = fs.readFileSync(path.join(deviceRoot, 'android/apply-config.sh'), 'utf8');
-  const unlockScript = fs.readFileSync(path.join(deviceRoot, 'android/provision-unlock-pin.sh'), 'utf8');
-  if (!applyScript.includes(`--es tool_permissions "'{\\"disabledTools\\":[],\\"disabledParams\\":{}}'"`)) {
+  const expectedToolPermissions = device === '[REDACTED_DEVICE_ALIAS]'
+    ? `--es tool_permissions '{"disabledTools":[],"disabledParams":{}}'`
+    : `--es tool_permissions "'{\\"disabledTools\\":[],\\"disabledParams\\":{}}'"`;
+  if (!applyScript.includes(expectedToolPermissions)) {
     fail(`${device}/android/apply-config.sh must use ToolPermissionsConfig JSON field names`);
   }
-  if (!applyScript.includes(`--es cloudflare_tunnel_extra_args "''"`)) {
+  const expectedEmptyTunnelArgs = device === '[REDACTED_DEVICE_ALIAS]'
+    ? `--es cloudflare_tunnel_extra_args ""`
+    : `--es cloudflare_tunnel_extra_args "''"`;
+  if (!applyScript.includes(expectedEmptyTunnelArgs)) {
     fail(`${device}/android/apply-config.sh must restore empty Cloudflare extra arguments explicitly`);
   }
-  if (!applyScript.includes(`--es device_slug "''"`)) {
-    fail(`${device}/android/apply-config.sh must preserve the empty device slug through adb shell quoting`);
+  const expectedSlug = device === '[REDACTED_DEVICE_ALIAS]' ? `--es device_slug "[REDACTED_DEVICE_ALIAS]"` : `--es device_slug "''"`;
+  if (!applyScript.includes(expectedSlug)) {
+    fail(`${device}/android/apply-config.sh must preserve its device slug through adb shell quoting`);
   }
   if (!applyScript.includes('adb_shell_stdin am broadcast') ||
       applyScript.includes('"${ADB[@]}" shell am broadcast')) {
@@ -114,6 +121,16 @@ for (const device of devices) {
   if (androidConfig.remote_access?.cloudflare?.extra_arguments !== '') {
     fail(`${device}/android/config.json must not use the broken token-mode --edge workaround`);
   }
+  if (device === '[REDACTED_DEVICE_ALIAS]') {
+    for (const forbidden of ['settings put secure', 'enabled_accessibility_services', 'allow_listener',
+      'pm grant', 'Shizuku', 'ngrok', '_PIN']) {
+      if (applyScript.toLowerCase().includes(forbidden.toLowerCase())) {
+        fail(`[REDACTED_DEVICE_ALIAS]/android/apply-config.sh contains forbidden provisioning behavior: ${forbidden}`);
+      }
+    }
+    continue;
+  }
+  const unlockScript = fs.readFileSync(path.join(deviceRoot, 'android/provision-unlock-pin.sh'), 'utf8');
   if (!unlockScript.includes('--extra "key_version:s:${key_version}"') ||
       !unlockScript.includes('--extra "ciphertext:s:${ciphertext}"')) {
     fail(`${device}/android/provision-unlock-pin.sh must use content-call KEY:TYPE:VALUE extras`);
@@ -137,15 +154,19 @@ if (!fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok/account
 if (fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok'))) {
   fail('[REDACTED_DEVICE_ALIAS] must remain Cloudflare-only and must not contain an ngrok directory');
 }
+if (fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/ngrok')) ||
+    fs.existsSync(path.join(root, 'myconf/[REDACTED_DEVICE_ALIAS]/android/provision-unlock-pin.sh'))) {
+  fail('[REDACTED_DEVICE_ALIAS] must remain Cloudflare-only without phone PIN provisioning');
+}
 
 if (!process.exitCode) {
-  console.log('OK: [REDACTED_DEVICE_ALIAS] and [REDACTED_DEVICE_ALIAS] follow the same device-configuration contract.');
-  console.log('OK: [REDACTED_DEVICE_ALIAS] has the optional ngrok extension; [REDACTED_DEVICE_ALIAS] is Cloudflare-only.');
-  console.log('OK: both devices restore tool permissions using application JSON field names.');
-  console.log('OK: both devices restore empty ADB string values without argument shifting.');
-  console.log('OK: both devices send configuration broadcasts through adb shell stdin.');
-  console.log('OK: neither device uses the broken token-mode --edge workaround.');
+  console.log('OK: [REDACTED_DEVICE_ALIAS], [REDACTED_DEVICE_ALIAS] and [REDACTED_DEVICE_ALIAS] follow their declared device-configuration contracts.');
+  console.log('OK: [REDACTED_DEVICE_ALIAS] has optional ngrok; [REDACTED_DEVICE_ALIAS] and [REDACTED_DEVICE_ALIAS] are Cloudflare-only.');
+  console.log('OK: all devices restore tool permissions and empty ADB values safely.');
+  console.log('OK: all devices send configuration broadcasts through adb shell stdin.');
+  console.log('OK: no device uses the broken token-mode --edge workaround.');
   console.log('OK: both PIN provisioning scripts validate Android content-call persistence.');
   console.log('OK: both PIN provisioning scripts reject pattern and password screen locks.');
+  console.log('OK: [REDACTED_DEVICE_ALIAS] has no permission, PIN, Shizuku or ngrok provisioning side effects.');
 }
 NODE
