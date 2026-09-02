@@ -72,6 +72,10 @@ validate_payload() {
   validate_native_tunnel_payload "$1"
 }
 
+package_path_or_empty() {
+  "${ADB[@]}" -s "$SERIAL" shell pm path "$PACKAGE_ID" 2>/dev/null | tr -d '\r' || true
+}
+
 cleanup() {
   if [[ "$FIRST_INSTALL_ROLLBACK" == true && -n "$FIRST_INSTALL_SERIAL" ]]; then
     printf 'ROLLBACK: removing the failed Bedroom TV first installation\n' >&2
@@ -248,7 +252,7 @@ if [[ "$DEVICE" == bedroom-tv ]]; then
   [[ "$manufacturer" == Google && "$model" == "[REDACTED_OWNER_VALUE]" && "$device_name" == kirkwood &&
      "$sdk" == 34 && "$abi_list" == "armeabi-v7a,armeabi" ]] ||
     die "Bedroom TV identity or 32-bit userspace contract mismatch"
-  installed_path="$("${ADB[@]}" -s "$SERIAL" shell pm path "$PACKAGE_ID" 2>/dev/null | tr -d '\r')"
+  installed_path="$(package_path_or_empty)"
   [[ -z "$installed_path" ]] || die "Bedroom TV first-install path requires the package to be absent"
   FIRST_INSTALL_SERIAL="$SERIAL"
   FIRST_INSTALL_ROLLBACK=true
