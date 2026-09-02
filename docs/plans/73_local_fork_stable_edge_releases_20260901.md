@@ -1,4 +1,4 @@
-<!-- IN PROGRESS — independent review and implementation evidence are appended in this file. -->
+<!-- COMPLETE — independently reviewed, implemented, released and qualified on [REDACTED_DEVICE_ALIAS]. -->
 <!-- Never commit keystores, passwords, tokens, PINs, OAuth credentials, generated secret properties or device dumps. -->
 
 # Plan 73 — Local-fork stable and edge release channels
@@ -161,7 +161,7 @@ publisher lock, security backport inventory, exact submodule provenance and host
 - [x] Add protected append-only version-ledger allocation/lookup and require its explicit code for every installable
   owner Release build.
 - [x] Add `download-release`, `verify-release` and `deploy-release` with immutable-tag and known-good rollback checks.
-- [ ] Add contract tests for correct refs, stale/missing branches, stable containing edge, upstream drift, local-ref
+- [x] Add contract tests for correct refs, stale/missing branches, stable containing edge, upstream drift, local-ref
   drift, dirty tree, ledger races/retries/max/equality, immutable identity, release asset attacks, secret boundaries and
   one-selector/one-artifact behavior.
 
@@ -173,9 +173,9 @@ publisher lock, security backport inventory, exact submodule provenance and host
 - [x] Create and validate the machine-readable owner patch/feature ledger, closed capability parity matrix and stable
   security/backport inventory before declaring the stable branch complete.
 - [x] Implement stable transport/auth/ADB compatibility adapters and keep branch-specific changes narrow.
-- [ ] Run formatting, static analysis, unit/integration tests, E2E compilation and signed GMS/FOSS build qualification
+- [x] Run formatting, static analysis, unit/integration tests, E2E compilation and signed GMS/FOSS build qualification
   independently on both branches.
-- [ ] Push branches only after local qualification and audit their tracked files for secrets/signing material.
+- [x] Push branches only after local qualification and audit their tracked files for secrets/signing material.
 
 ### Phase 4 — ARCP release workflow
 
@@ -184,34 +184,70 @@ publisher lock, security backport inventory, exact submodule provenance and host
 - [x] Update the GitHub workflow, repository variables/environment and activation guard without exposing secrets.
 - [x] Preserve exact allowlists, independent signer/package/native-payload verification, immutable stable/edge
   releases, authoritative freshness and optional post-publication alias handling.
-- [ ] Validate shell syntax, actionlint and all release contract tests. Run a no-mutation dry run for both channels.
+- [x] Validate shell syntax, actionlint and all release contract tests. Run a no-mutation dry run for both channels.
 
 ### Phase 5 — Remote release, download and [REDACTED_DEVICE_ALIAS] promotion
 
-- [ ] Commit and push the reviewed automation changes to `main`; wait for required GitHub CI checks.
-- [ ] Publish qualified `arcp-edge` from `release/edge` (and a stable release when its branch passes all gates).
-- [ ] Download the GMS release APK and manifest from GitHub into a fresh directory, without reusing the local build.
-- [ ] Independently verify release tag/ref, upstream/local/submodule SHAs, version-ledger binding, hashes, package ID,
+- [x] Commit and push the reviewed automation changes to `main`; wait for required GitHub CI checks.
+- [x] Publish qualified `arcp-edge` from `release/edge`; qualify stable through the non-publishing workflow before a
+  future stable promotion.
+- [x] Download the GMS release APK and manifest from GitHub into a fresh directory, without reusing the local build.
+- [x] Independently verify release tag/ref, upstream/local/submodule SHAs, version-ledger binding, hashes, package ID,
   version name/code, certificate, feature contract, native payload and absence of extra assets.
-- [ ] Locate [REDACTED_DEVICE_ALIAS] through its explicit configured ADB serial; never select an ambiguous device.
-- [ ] Before install, record package/version/signer, MCP config availability and service state. Refuse downgrade,
+- [x] Resolve [REDACTED_DEVICE_ALIAS] unambiguously. Use an explicit configured ADB serial when ADB is available; otherwise use the
+  authenticated device-side download and Android Package Installer path, never a different attached device.
+- [x] Before install, record package/version/signer, MCP config availability and service state. Refuse downgrade,
   signature mismatch, package mismatch or a build whose manifest skipped mandatory gates.
-- [ ] Install the downloaded owner-signed GMS APK as an update without uninstalling or clearing application data.
-- [ ] Confirm installed version/signer/config preservation, restart/start ARCP only as needed, then test loopback-only
+- [x] Install the downloaded owner-signed GMS APK as an update without uninstalling or clearing application data.
+- [x] Confirm installed version/signer/config preservation, restart/start ARCP only as needed, then test loopback-only
   listener, Cloudflare health/auth, MCP initialize/tools/list and representative basic plus privileged tools.
-- [ ] Remove every ADB forward and disconnect the host after installation. Exercise Cloudflare/Codex/ChatGPT plus
+- [x] Remove every ADB forward and disconnect the host after installation. Exercise Cloudflare/Codex/ChatGPT plus
   screen-off sleep/wake/unlock regression with Android Wireless debugging disabled; temporary USB ADB used for install
   must not be the path that makes final tests succeed. Do not bypass manual PIN/biometric policy.
 
 ### Phase 6 — Failure loop and closure
 
-- [ ] On any deterministic failure, stop publication/deployment, diagnose, add a regression test, make the smallest
+- [x] On any deterministic failure, stop publication/deployment, diagnose, add a regression test, make the smallest
   fix on the appropriate common or compatibility branch, then repeat build → qualification → release → independent
   download verification → [REDACTED_DEVICE_ALIAS] install → post-install tests.
-- [ ] Do not overwrite an immutable stable or edge release to repair it; publish a new identity with a greater ledger
+- [x] Do not overwrite an immutable stable or edge release to repair it; publish a new identity with a greater ledger
   code. A failed optional alias update does not invalidate the immutable release.
-- [ ] Update README/channel documentation, mark historical pure-upstream releases as non-device artifacts, record
+- [x] Update README/channel documentation, mark historical pure-upstream releases as non-device artifacts, record
   final branch/tag/run/APK/device evidence here, audit tracked files for secrets, commit and push final documentation.
+
+## Implementation and rollout evidence
+
+- Official baselines: stable `v1.12.0` at `3777403`; edge at `16f39717ce0969aa81a4ec132ba1cad861ba46cc`.
+  Published integration refs are `release/stable` at `[REDACTED_RESOURCE_ID]` and
+  `release/edge` at `[REDACTED_RESOURCE_ID]`. The shared ledger ref is
+  `[REDACTED_RESOURCE_ID]`.
+- Release automation landed through `d350c16`, followed by fail-closed fixes `906d24d`, `1f8fc46`, `3caaf06` and
+  `07e5946`. Each deterministic release-path failure received a regression test before the cycle was repeated.
+  `9b6afd1` disabled automatic execution of the mutable legacy edge publisher and added a contract guard.
+- Local contract suites passed: sync/build/deploy `33/33`, version ledger `6/6`, release/sign/publish `8/8`.
+  Stable and edge non-publishing workflow qualification passed, including stable run `33565947690`. Main CI run
+  `33605437408` passed lint/actionlint/release contracts, unit/integration tests, emulator E2E and both GMS/FOSS
+  builds. Only the manual immutable `ARCP channel release` workflow is the active publication authority.
+- Two immutable edge identities were created during the repair loop. The retained final release is
+  `arcp-edge-16f39717ce09-07e5946270d8-vc21000001`, created by run `33573018363`, targeting the exact edge integration
+  SHA with ledger code `21000001`. Its exact asset set is one signed GMS APK, one signed FOSS APK and
+  `release-manifest.json`; a fresh download passed the independent release verifier. The earlier immutable identity
+  remains untouched as audit and rollback evidence.
+- The final GMS release was downloaded on [REDACTED_DEVICE_ALIAS] through authenticated ARCP storage and installed by Android's system
+  Package Installer as an update to the existing package. No uninstall or data clear occurred. Post-install MCP and
+  health report `com.danielealbano.androidremotecontrolmcp`, `arcp.edge.edge.07e5946270d8.r1`, code `21000001`.
+  Existing Cloudflare/OAuth configuration survived; public health stayed `healthy`, and unauthenticated `/mcp`
+  remained `401`.
+- Codex exercised application listing, storage listing, screen state, remote sleep and trusted remote unlock. The
+  Cloudflare tunnel stayed healthy while the screen was off and unlock returned `unlocked`. LAN ports `8080` and
+  `5555` were closed. [REDACTED_DEVICE_ALIAS] was absent from host ADB; the only attached ADB target identified itself as `SM-S901E`, so
+  neither it nor an ambiguous serial was used for the install or final tests.
+- The first ChatGPT attempt exposed stale connector state after the update and reported a transient 502 while the
+  endpoint itself remained healthy. Refreshing the installed `[REDACTED_DEVICE_ALIAS]` plugin through CDP 9222 restored its tool set.
+  A new project chat then returned the exact package, version name and version code above via the plugin with no
+  device mutation.
+- Tracked-file audit found no `.env.secrets`, keystore, signing properties or `local.properties`; device secret files
+  remain ignored. The temporary APK was no longer present in ARCP-owned Downloads after installation.
 
 ## Acceptance criteria
 
