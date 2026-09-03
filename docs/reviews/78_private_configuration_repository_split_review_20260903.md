@@ -13,7 +13,7 @@ ignorowane artefakty. Review nie ocenia ani nie ujawnia wartości konfiguracji.
   konfiguracji operacje `download`/`verify`, ale w `deploy` ma aliasy, adres i ścieżkę `myconf` wpisane w kod.
 - Publiczny channel-release nie jest w całości secretless: osobny job używa `NGROK_AUTHTOKEN`, a podpisywanie używa
   keystore i haseł. Secretless jest statyczny build, nie cały release workflow.
-- Poza trzema `.env.secrets` lokalne `myconf/[REDACTED_DEVICE_ALIAS]/cloudflare/` zawiera ignorowane `terraform.tfstate`, zapisany
+- Poza trzema `.env.secrets` lokalny profil telewizyjny zawiera ignorowane `terraform.tfstate`, zapisany
   `tfplan` i `.terraform/`. Plan wymienia w kroku przenoszenia tylko `.env.secrets`.
 
 ## Must-fix

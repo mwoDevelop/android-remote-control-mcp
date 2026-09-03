@@ -73,14 +73,14 @@ The application is a **service-based Android app** that exposes an MCP server ov
   uninstall is guarded by an immutable protected-package policy and requires Package Manager's explicit `Success`
   result. Sleep invokes only `input keyevent KEYCODE_SLEEP`; the existing per-tool policy can disable every handler.
 - **Deliberate exclusions**: No generic shell tool, prefix allowlist, generic settings writer, APK staging, clear-data
-  action, root flow, second MCP stack, automated Shizuku start, or Qustodio mutation.
+  action, root flow, second MCP stack, automated privileged-service start, or parental-control mutation.
 - **Attribution**: The minimal reflective process-launch and parser approach is adapted from the reviewed Apache-2.0
   `stixez/droid-mcp` commit recorded in `THIRD_PARTY_NOTICES.md`; its binary and Ktor graph are not packaged.
 
 The binding drains stdout/stderr concurrently, retains bounded output, destroys timed-out/cancelled processes, and
 keeps Shizuku readiness separate from MCP server readiness. Non-rooted devices require manual Shizuku reactivation
-after reboot. The direct [REDACTED_DEVICE_ALIAS] production, signing and acceptance gates are specified in
-[`Plan 66`](plans/66_shizuku_privileged_admin_tools_and_device_delivery_20260827142719.md).
+after reboot. Device-specific production, signing and acceptance evidence belongs in the external private
+configuration repository.
 
 ### Inter-Service Communication
 

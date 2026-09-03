@@ -148,7 +148,7 @@ class OAuthClientRepositoryImplTest {
             val unrelated = register(1L)
             val restored =
                 OAuthClient(
-                    clientId = "[REDACTED_OWNER_VALUE]",
+                    clientId = "arc-00000000-0000-4000-8000-000000000001",
                     clientName = "ChatGPT",
                     redirectUris = listOf("https://chatgpt.com/connector/oauth/example"),
                     applicationType = "web",

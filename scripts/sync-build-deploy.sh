@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Unlock credentials are consumed only by the dedicated provisioning scripts and must never
 # reach Git, build, network, ADB, or deployment child processes through an inherited environment.
-unset [REDACTED_DEVICE_ALIAS]_PIN [REDACTED_DEVICE_ALIAS]_PIN
+unset ARCP_DEVICE_UNLOCK_PIN
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${ARCP_REPO_ROOT_OVERRIDE:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)}"
@@ -931,7 +931,7 @@ preflight_artifact_and_device() {
   [[ "$candidate_package" == "$expected_package" ]] || die "APK application ID mismatch (debug POC uses a separate helper)"
   signer="$(resolve_android_tool apksigner)"
   if installed_cert="$(installed_certificate "$expected_package" "$signer")"; then
-    [[ "$installed_cert" == "$candidate_cert" ]] || die "Signing certificate mismatch; automatic uninstall is prohibited (see Plan 66 User Story 7)"
+    [[ "$installed_cert" == "$candidate_cert" ]] || die "Signing certificate mismatch; automatic uninstall is prohibited"
     installed_code="$(adb_target shell dumpsys package "$expected_package" | sed -n 's/.*versionCode=\([0-9]*\).*/\1/p' | head -1)"
     if [[ "$COMMAND" != "rollback" && -n "$installed_code" ]]; then
       ((candidate_code >= installed_code)) || die "Version downgrade is allowed only through rollback"
@@ -971,7 +971,7 @@ write_deployment_manifest() {
   node -e '
     const fs=require("fs"); const [out,state,device,sha,gitSha]=process.argv.slice(1);
     fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"device_deployment",checked_at:new Date().toISOString(),
-      state,device,apk_sha256:sha,git_sha:gitSha,manual_gates:["restricted_settings","shizuku_after_reboot","oem_battery_policy","qustodio_policy"]},null,2)+"\n");
+      state,profile:device,apk_sha256:sha,git_sha:gitSha,manual_gates:["restricted_settings","privileged_service_after_reboot","oem_battery_policy","parental_control_policy"]},null,2)+"\n");
   ' "$out" "$state" "$DEVICE" "$sha" "$(git -C "$REPO_ROOT" rev-parse HEAD)"
   printf '%s' "$out"
 }
@@ -997,12 +997,12 @@ deploy_artifact() {
   [[ "$(adb_target shell pm path "$expected_package" | tr -d '\r')" == package:* ]] || die "Package not installed after adb install -r"
   apply_script="$(arcp_profile_path apply)"
   verify_script="$(arcp_profile_path verify)"
-  env -u [REDACTED_DEVICE_ALIAS]_PIN -u [REDACTED_DEVICE_ALIAS]_PIN ADB_SERIAL="$SERIAL" "$apply_script" --restart
+  env -u ARCP_DEVICE_UNLOCK_PIN ADB_SERIAL="$SERIAL" "$apply_script" --restart
   verify_loopback_binding
   "$verify_script" --live
   manifest="$(write_deployment_manifest PENDING_MANUAL_GATES)"
   printf 'APK and configuration applied; basic endpoint and loopback checks passed.\n'
-  printf 'PENDING_MANUAL_GATES: authenticated ordinary/admin calls, OAuth denial, screen-off, service restart, Shizuku binder recovery, Restricted Settings, OEM battery policy and Qustodio remain acceptance checks.\n'
+  printf 'PENDING_MANUAL_GATES: authenticated ordinary/admin calls, OAuth denial, screen-off, service restart, privileged-service recovery, Restricted Settings, OEM battery policy and parental-control policy remain acceptance checks.\n'
   printf 'Deployment manifest: %s\n' "$manifest"
 }
 

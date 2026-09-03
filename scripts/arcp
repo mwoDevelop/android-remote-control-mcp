@@ -1,0 +1,434 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+unset ARCP_DEVICE_UNLOCK_PIN ANDROID_MCP_BEARER_TOKEN CLOUDFLARE_TUNNEL_TOKEN \
+  RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${ARCP_REPO_ROOT_OVERRIDE:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)}"
+SYNC_SCRIPT="$REPO_ROOT/scripts/sync-build-deploy.sh"
+REPOSITORY="mwoDevelop/android-remote-control-mcp"
+WORKFLOW="arcp-channel-release.yml"
+MAIN_BRANCH="main"
+DISCOVERY_ATTEMPTS="${ARCP_DISCOVERY_ATTEMPTS:-30}"
+DISCOVERY_INTERVAL="${ARCP_DISCOVERY_INTERVAL_SECONDS:-2}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/arcp build [local|stable|edge] [--variant gmsDebug|fossDebug|gmsRelease|fossRelease]
+                     [--skip-e2e-compile]
+  scripts/arcp release <stable|edge> [--revision N] [--publish] [--no-wait]
+  scripts/arcp release status [--limit N] [--request-id <id>] [--watch]
+  scripts/arcp github status
+  scripts/arcp github configure [--apply]
+
+Defaults and safety:
+  build defaults to local gmsDebug. Channel builds accept debug variants only; installable stable/edge
+  Release APKs are produced by the GitHub release workflow. release defaults to a fully qualified dry-run,
+  waits for its exact request ID, and never publishes without literal --publish. github configure is a
+  preview unless --apply is supplied.
+
+Examples:
+  scripts/arcp build
+  scripts/arcp build stable
+  scripts/arcp build edge --variant fossDebug
+  scripts/arcp release edge
+  scripts/arcp release stable --publish
+  scripts/arcp release status --request-id arcp-20260903T120000Z-0123456789abcdef --watch
+  scripts/arcp github configure --apply
+EOF
+}
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARNING: %s\n' "$*" >&2; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "Required command is unavailable: $1"; }
+
+configure_android_sdk() {
+  local candidate
+  if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME" ]]; then
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    return
+  fi
+  if [[ -n "${ANDROID_SDK_ROOT:-}" && -d "$ANDROID_SDK_ROOT" ]]; then
+    export ANDROID_HOME="$ANDROID_SDK_ROOT"
+    return
+  fi
+  for candidate in "$HOME/android-sdk" "$HOME/Android/Sdk" "$HOME/.local/share/android-sdk"; do
+    if [[ -x "$candidate/cmdline-tools/latest/bin/sdkmanager" || -d "$candidate/platforms" ]]; then
+      export ANDROID_HOME="$candidate"
+      export ANDROID_SDK_ROOT="$candidate"
+      return
+    fi
+  done
+}
+
+json_value() {
+  node -e '
+    const value=process.argv[2].split(".").reduce((v,k)=>v==null?undefined:v[k],JSON.parse(process.argv[1]));
+    if (value===undefined || value===null) process.exit(2); process.stdout.write(String(value));
+  ' "$1" "$2"
+}
+
+validate_request_id() {
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$ ]] ||
+    die "request ID must be 8-80 allowlisted ASCII characters"
+}
+
+validate_polling_contract() {
+  [[ "$DISCOVERY_ATTEMPTS" =~ ^[1-9][0-9]*$ && "$DISCOVERY_ATTEMPTS" -le 120 ]] ||
+    die "ARCP_DISCOVERY_ATTEMPTS must be an integer from 1 through 120"
+  [[ "$DISCOVERY_INTERVAL" =~ ^[0-9]+$ && "$DISCOVERY_INTERVAL" -le 10 ]] ||
+    die "ARCP_DISCOVERY_INTERVAL_SECONDS must be an integer from 0 through 10"
+}
+
+validate_origin() {
+  local url
+  url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null)" || die "Missing origin remote"
+  case "$url" in
+    https://github.com/mwoDevelop/android-remote-control-mcp|https://github.com/mwoDevelop/android-remote-control-mcp.git|git@github.com:mwoDevelop/android-remote-control-mcp.git|ssh://git@github.com/mwoDevelop/android-remote-control-mcp.git) ;;
+    *) die "origin is not the expected owner repository: $url" ;;
+  esac
+}
+
+validate_github_target() {
+  local actual
+  require_command gh
+  gh auth status --hostname github.com >/dev/null 2>&1 || die "GitHub CLI is not authenticated for github.com"
+  actual="$(gh repo view "$REPOSITORY" --json nameWithOwner --jq .nameWithOwner)" ||
+    die "Cannot read owner repository $REPOSITORY"
+  [[ "$actual" == "$REPOSITORY" ]] || die "GitHub repository identity mismatch: $actual"
+}
+
+workflow_json() {
+  gh workflow list --repo "$REPOSITORY" --all --limit 100 --json id,name,path,state
+}
+
+workflow_field() {
+  node -e '
+    const rows=JSON.parse(process.argv[1]), row=rows.find(v=>v.path===process.argv[2]);
+    if (!row) process.exit(3); const value=row[process.argv[3]];
+    if (value===undefined) process.exit(4); process.stdout.write(String(value));
+  ' "$1" "$2" "$3"
+}
+
+workflow_report() {
+  local data="$1" path desired state id unknown drift=false
+  printf 'path\tid\tstate\tdesired\n'
+  while IFS=$'\t' read -r path desired; do
+    state="$(workflow_field "$data" "$path" state 2>/dev/null || printf missing)"
+    id="$(workflow_field "$data" "$path" id 2>/dev/null || printf '-')"
+    printf '%s\t%s\t%s\t%s\n' "$path" "$id" "$state" "$desired"
+    [[ "$state" == "$desired" ]] || drift=true
+  done <<'EOF'
+.github/workflows/ci.yml	active
+.github/workflows/arcp-channel-release.yml	active
+.github/workflows/edge-release.yml	disabled_manually
+.github/workflows/release.yml	disabled_manually
+EOF
+  unknown="$(node -e '
+    const rows=JSON.parse(process.argv[1]);
+    const known=new Set([".github/workflows/ci.yml",".github/workflows/arcp-channel-release.yml",
+      ".github/workflows/edge-release.yml",".github/workflows/release.yml"]);
+    for (const row of rows) if (row.state==="active" && !known.has(row.path)) console.log(row.path+"\t"+row.id);
+  ' "$data")"
+  if [[ -n "$unknown" ]]; then
+    warn "Unknown active workflows require review:"
+    printf '%s\n' "$unknown" >&2
+    drift=true
+  fi
+  [[ "$drift" == false ]]
+}
+
+github_status() {
+  local data
+  require_command node
+  validate_github_target
+  data="$(workflow_json)" || die "Cannot list GitHub workflows"
+  workflow_report "$data"
+}
+
+rollback_command() {
+  local path="$1" state="$2"
+  case "$state" in
+    active) printf 'gh workflow enable %q --repo %q\n' "$path" "$REPOSITORY" ;;
+    disabled_*) printf 'gh workflow disable %q --repo %q\n' "$path" "$REPOSITORY" ;;
+    *) printf '# restore %q to its prior state %q manually\n' "$path" "$state" ;;
+  esac
+}
+
+github_configure() {
+  local apply="$1" before after path desired state failed=false
+  require_command node
+  validate_github_target
+  before="$(workflow_json)" || die "Cannot list GitHub workflows"
+  printf 'Before and desired state:\n'
+  workflow_report "$before" || true
+  for path in .github/workflows/ci.yml .github/workflows/arcp-channel-release.yml \
+      .github/workflows/edge-release.yml .github/workflows/release.yml; do
+    workflow_field "$before" "$path" state >/dev/null 2>&1 || die "Required workflow is missing: $path"
+  done
+  printf 'Rollback commands for the captured pre-state:\n'
+  for path in .github/workflows/ci.yml .github/workflows/arcp-channel-release.yml \
+      .github/workflows/edge-release.yml .github/workflows/release.yml; do
+    state="$(workflow_field "$before" "$path" state)"
+    rollback_command "$path" "$state"
+  done
+  if [[ "$apply" == false ]]; then
+    printf 'PREVIEW: no GitHub workflow state was changed. Add --apply to converge it.\n'
+    return 0
+  fi
+  while IFS=$'\t' read -r path desired; do
+    state="$(workflow_field "$before" "$path" state)"
+    [[ "$state" != "$desired" ]] || continue
+    if [[ "$desired" == active ]]; then
+      gh workflow enable "$path" --repo "$REPOSITORY" || failed=true
+    else
+      if [[ "$state" != active ]]; then
+        gh workflow enable "$path" --repo "$REPOSITORY" || failed=true
+      fi
+      gh workflow disable "$path" --repo "$REPOSITORY" || failed=true
+    fi
+  done <<'EOF'
+.github/workflows/ci.yml	active
+.github/workflows/arcp-channel-release.yml	active
+.github/workflows/edge-release.yml	disabled_manually
+.github/workflows/release.yml	disabled_manually
+EOF
+  after="$(workflow_json)" || die "Workflow mutation ran but final state cannot be read; use the printed rollback commands"
+  printf 'After state:\n'
+  if ! workflow_report "$after"; then failed=true; fi
+  [[ "$failed" == false ]] || die "GitHub workflow state did not converge; use the printed rollback commands"
+  printf 'GitHub workflow state converged.\n'
+}
+
+build_command() {
+  local source=local variant=gmsDebug skip=false
+  local -a args
+  if (($#)) && [[ "$1" != --* ]]; then source="$1"; shift; fi
+  while (($#)); do
+    case "$1" in
+      --variant) (($# >= 2)) || die "--variant requires a value"; variant="$2"; shift 2 ;;
+      --skip-e2e-compile) skip=true; shift ;;
+      --help|-h) usage; exit 0 ;;
+      *) die "Unknown build argument: $1" ;;
+    esac
+  done
+  case "$source" in local|stable|edge) ;; *) die "Build source must be local, stable or edge" ;; esac
+  case "$variant" in gmsDebug|fossDebug|gmsRelease|fossRelease) ;; *) die "Unknown build variant: $variant" ;; esac
+  if [[ "$source" != local && "$variant" == *Release ]]; then
+    die "Channel Release builds are produced only by 'scripts/arcp release'; choose gmsDebug or fossDebug"
+  fi
+  if [[ "$source" == local && "$variant" == *Release && ! -f "$REPO_ROOT/keystore.properties" ]]; then
+    die "Local Release build requires ignored keystore.properties; use 'scripts/arcp release' for channel releases"
+  fi
+  configure_android_sdk
+  args=(build --variant "$variant")
+  [[ "$source" == local ]] || args+=("--latest-$source")
+  [[ "$skip" == false ]] || args+=(--skip-e2e-compile)
+  exec "$SYNC_SCRIPT" "${args[@]}"
+}
+
+release_preflight() {
+  local publish="$1" state_output branch head remote_head
+  validate_origin
+  validate_github_target
+  branch="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null)" || die "Detached HEAD cannot dispatch a release"
+  [[ "$branch" == "$MAIN_BRANCH" ]] || die "Release dispatch requires branch $MAIN_BRANCH, current branch is $branch"
+  [[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]] ||
+    die "Release dispatch requires a clean worktree"
+  git -C "$REPO_ROOT" fetch --no-tags origin \
+    "+refs/heads/$MAIN_BRANCH:refs/remotes/origin/$MAIN_BRANCH" >/dev/null
+  head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  remote_head="$(git -C "$REPO_ROOT" rev-parse "refs/remotes/origin/$MAIN_BRANCH")"
+  [[ "$head" == "$remote_head" ]] || die "Local HEAD differs from authoritative origin/$MAIN_BRANCH; push or update first"
+  if ! state_output="$(workflow_json)"; then die "Cannot list GitHub workflows"; fi
+  if ! workflow_report "$state_output" >&2; then
+    [[ "$publish" == false ]] || die "Publication requires the single-publisher GitHub workflow state"
+    warn "GitHub workflow state has drift; dry-run dispatch is allowed, publication is not"
+  fi
+  printf '%s' "$head"
+}
+
+new_request_id() {
+  local random
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    random="$(tr -d '-' </proc/sys/kernel/random/uuid)"
+  elif command -v openssl >/dev/null 2>&1; then
+    random="$(openssl rand -hex 16)"
+  else
+    random="$(printf '%s' "$(date -u +%s%N)-$$-$RANDOM" | sha256sum | awk '{print $1}')"
+  fi
+  printf 'arcp-%s-%s' "$(date -u +%Y%m%dT%H%M%SZ)" "${random:0:16}"
+}
+
+select_run() {
+  node -e '
+    const rows=JSON.parse(process.argv[1]), request=process.argv[2], expectedSha=process.argv[3];
+    const suffix="["+request+"]";
+    const matches=rows.filter(v=>v.event==="workflow_dispatch" && v.headBranch==="main" &&
+      v.displayTitle.endsWith(suffix) && (!expectedSha || v.headSha===expectedSha));
+    if (matches.length===0) process.exit(3);
+    if (matches.length!==1) process.exit(4);
+    process.stdout.write(JSON.stringify(matches[0]));
+  ' "$1" "$2" "$3"
+}
+
+discover_run() {
+  local request_id="$1" expected_sha="${2:-}" rows selected status attempt
+  validate_polling_contract
+  for ((attempt=1; attempt<=DISCOVERY_ATTEMPTS; attempt++)); do
+    rows="$(gh run list --repo "$REPOSITORY" --workflow "$WORKFLOW" --event workflow_dispatch --limit 100 \
+      --json databaseId,displayTitle,event,headBranch,headSha,status,conclusion,url)" ||
+      die "Cannot list workflow runs"
+    set +e
+    selected="$(select_run "$rows" "$request_id" "$expected_sha" 2>/dev/null)"
+    status=$?
+    set -e
+    case "$status" in
+      0) printf '%s' "$selected"; return 0 ;;
+      3) ((attempt == DISCOVERY_ATTEMPTS)) || { ((DISCOVERY_INTERVAL == 0)) || sleep "$DISCOVERY_INTERVAL"; continue; } ;;
+      4) die "More than one workflow run matches request ID $request_id" ;;
+      *) die "Cannot parse GitHub workflow run list" ;;
+    esac
+  done
+  die "GitHub did not register request ID $request_id within the bounded discovery window"
+}
+
+print_run() {
+  local request_id="$1" run="$2"
+  printf 'request_id=%s\nrun_id=%s\nurl=%s\nstatus=%s\nconclusion=%s\n' \
+    "$request_id" "$(json_value "$run" databaseId)" "$(json_value "$run" url)" \
+    "$(json_value "$run" status)" "$(json_value "$run" conclusion 2>/dev/null || true)"
+}
+
+report_release_result() {
+  local request_id="$1" run_id="$2" result_dir result_file result status tag channel local_sha remote
+  result_dir="$(mktemp -d /tmp/arcp-result.XXXXXX)"
+  if ! gh run download "$run_id" --repo "$REPOSITORY" --name "arcp-result-$run_id" --dir "$result_dir"; then
+    rm -rf -- "$result_dir"
+    die "Successful run $run_id has no release-result artifact"
+  fi
+  result_file="$result_dir/release-result.json"
+  [[ -f "$result_file" && ! -L "$result_file" ]] || { rm -rf -- "$result_dir"; die "Invalid release-result artifact"; }
+  result="$(<"$result_file")"
+  rm -rf -- "$result_dir"
+  [[ "$(json_value "$result" type)" == arcp_release_result && "$(json_value "$result" schema_version)" == 1 ]] ||
+    die "Invalid release-result contract"
+  [[ "$(json_value "$result" request_id)" == "$request_id" && "$(json_value "$result" run_id)" == "$run_id" ]] ||
+    die "Release-result correlation mismatch"
+  status="$(json_value "$result" status)"
+  case "$status" in dry_run_validated|published|existing_verified_noop) ;; *) die "Unknown release result: $status" ;; esac
+  tag="$(json_value "$result" release_tag)"
+  channel="$(json_value "$result" channel)"
+  local_sha="$(json_value "$result" local_sha)"
+  if [[ "$status" == published || "$status" == existing_verified_noop ]]; then
+    remote="$(gh release view "$tag" --repo "$REPOSITORY" --json tagName,targetCommitish,isPrerelease)" ||
+      die "Published result cannot be read from GitHub Releases"
+    node -e '
+      const r=JSON.parse(process.argv[1]), tag=process.argv[2], sha=process.argv[3], edge=process.argv[4]==="edge";
+      if (r.tagName!==tag || r.targetCommitish!==sha || r.isPrerelease!==edge) process.exit(2);
+    ' "$remote" "$tag" "$local_sha" "$channel" || die "Published release identity does not match workflow evidence"
+  fi
+  printf 'result=%s\nrelease_tag=%s\nupstream_sha=%s\nlocal_sha=%s\n' "$status" "$tag" \
+    "$(json_value "$result" upstream_sha)" "$local_sha"
+}
+
+watch_run() {
+  local request_id="$1" run="$2" run_id watch_status final
+  run_id="$(json_value "$run" databaseId)"
+  set +e
+  gh run watch "$run_id" --repo "$REPOSITORY" --exit-status
+  watch_status=$?
+  set -e
+  final="$(gh run view "$run_id" --repo "$REPOSITORY" \
+    --json databaseId,displayTitle,event,headBranch,headSha,status,conclusion,url)" || die "Cannot read completed run $run_id"
+  print_run "$request_id" "$final"
+  [[ $watch_status -eq 0 ]] || return "$watch_status"
+  [[ "$(json_value "$final" status)" == completed && "$(json_value "$final" conclusion)" == success ]] || return 1
+  report_release_result "$request_id" "$run_id"
+}
+
+release_status() {
+  local limit=10 request_id="" watch=false run status conclusion
+  while (($#)); do
+    case "$1" in
+      --limit) (($# >= 2)) || die "--limit requires a value"; limit="$2"; shift 2 ;;
+      --request-id) (($# >= 2)) || die "--request-id requires a value"; request_id="$2"; shift 2 ;;
+      --watch) watch=true; shift ;;
+      *) die "Unknown release status argument: $1" ;;
+    esac
+  done
+  [[ "$limit" =~ ^[1-9][0-9]*$ && "$limit" -le 100 ]] || die "--limit must be an integer from 1 through 100"
+  require_command node
+  validate_github_target
+  if [[ -z "$request_id" ]]; then
+    [[ "$watch" == false ]] || die "--watch requires --request-id"
+    gh run list --repo "$REPOSITORY" --workflow "$WORKFLOW" --event workflow_dispatch --limit "$limit"
+    return
+  fi
+  validate_request_id "$request_id"
+  run="$(discover_run "$request_id")"
+  if [[ "$watch" == true ]]; then watch_run "$request_id" "$run"; return; fi
+  print_run "$request_id" "$run"
+  status="$(json_value "$run" status)"
+  conclusion="$(json_value "$run" conclusion 2>/dev/null || true)"
+  [[ "$status" != completed || "$conclusion" == success ]] || return 1
+}
+
+release_command() {
+  local channel="$1"; shift
+  local revision=1 publish=false no_wait=false workflow_sha channel_json upstream_sha local_sha request_id run
+  case "$channel" in stable|edge) ;; *) die "Release channel must be stable or edge" ;; esac
+  while (($#)); do
+    case "$1" in
+      --revision) (($# >= 2)) || die "--revision requires a value"; revision="$2"; shift 2 ;;
+      --publish) publish=true; shift ;;
+      --no-wait) no_wait=true; shift ;;
+      *) die "Unknown release argument: $1" ;;
+    esac
+  done
+  [[ "$revision" =~ ^[1-9][0-9]{0,3}$ ]] || die "--revision must be an integer from 1 through 9999"
+  require_command node
+  workflow_sha="$(release_preflight "$publish")"
+  channel_json="$("$SYNC_SCRIPT" channel-info "--latest-$channel")"
+  upstream_sha="$(json_value "$channel_json" upstream_sha)"
+  local_sha="$(json_value "$channel_json" local_sha)"
+  [[ "$upstream_sha" =~ ^[0-9a-f]{40}$ && "$local_sha" =~ ^[0-9a-f]{40}$ ]] || die "Channel resolver returned invalid SHAs"
+  request_id="$(new_request_id)"
+  validate_request_id "$request_id"
+  gh workflow run "$WORKFLOW" --repo "$REPOSITORY" --ref "$MAIN_BRANCH" \
+    -f "channel=$channel" -f "revision=$revision" -f "publish=$publish" -f "request_id=$request_id" \
+    -f "expected_source_sha=$upstream_sha" -f "expected_local_sha=$local_sha"
+  run="$(discover_run "$request_id" "$workflow_sha")"
+  print_run "$request_id" "$run"
+  [[ "$no_wait" == false ]] || return 0
+  watch_run "$request_id" "$run"
+}
+
+command="${1:-}"
+shift || true
+case "$command" in
+  build) build_command "$@" ;;
+  release)
+    sub="${1:-}"
+    [[ -n "$sub" ]] || die "release requires stable, edge or status"
+    shift
+    if [[ "$sub" == status ]]; then release_status "$@"; else release_command "$sub" "$@"; fi
+    ;;
+  github)
+    sub="${1:-}"
+    shift || true
+    case "$sub" in
+      status) (($# == 0)) || die "github status accepts no arguments"; github_status ;;
+      configure)
+        apply=false
+        while (($#)); do case "$1" in --apply) apply=true; shift ;; *) die "Unknown github configure argument: $1" ;; esac; done
+        github_configure "$apply"
+        ;;
+      *) die "github requires status or configure" ;;
+    esac
+    ;;
+  help|--help|-h|"") usage ;;
+  *) die "Unknown command: $command" ;;
+esac

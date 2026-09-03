@@ -33,7 +33,7 @@ import com.mwodevelop.androidremotecontrol.shizukuadmin.PrivilegedAdminReadiness
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Debug-only local harness for the blocking secure-keyguard feasibility gate in Plan 67. */
+/** Debug-only local harness for the blocking secure-keyguard feasibility gate. */
 class RemoteUnlockFeasibilityActivity : ComponentActivity() {
     private val digits = ByteArray(MAX_DIGITS)
     private var digitCount by mutableIntStateOf(0)
@@ -153,7 +153,7 @@ class RemoteUnlockFeasibilityActivity : ComponentActivity() {
                 val keyguardManager = getSystemService(KeyguardManager::class.java)
                 status =
                     if (injected && !keyguardManager.isDeviceLocked) {
-                        "PASS: [REDACTED_DEVICE_ALIAS] został odblokowany przez typowany UserService Shizuku."
+                        "PASS: urządzenie zostało odblokowane przez typowany UserService Shizuku."
                     } else {
                         "FAIL: urządzenie pozostało zablokowane; nie kontynuuj do wersji produkcyjnej."
                     }

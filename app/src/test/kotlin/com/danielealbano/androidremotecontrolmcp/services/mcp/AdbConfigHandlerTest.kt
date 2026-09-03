@@ -904,7 +904,7 @@ class AdbConfigHandlerTest {
                             AdbConfigHandler.EXTRA_OAUTH_CLIENT_REGISTRATIONS,
                             """
                             [{
-                              "client_id":"[REDACTED_OWNER_VALUE]",
+                              "client_id":"arc-00000000-0000-4000-8000-000000000001",
                               "client_name":"ChatGPT",
                               "redirect_uris":["https://chatgpt.com/connector/oauth/example"],
                               "application_type":"web"
@@ -918,7 +918,7 @@ class AdbConfigHandlerTest {
                 coVerify(exactly = 1) {
                     oauthClientRepository.restoreRegistration(
                         match<OAuthClient> {
-                            it.clientId == "[REDACTED_OWNER_VALUE]" &&
+                            it.clientId == "arc-00000000-0000-4000-8000-000000000001" &&
                                 it.clientName == "ChatGPT" &&
                                 it.redirectUris == listOf("https://chatgpt.com/connector/oauth/example") &&
                                 it.currentRefreshJti == null
@@ -937,7 +937,7 @@ class AdbConfigHandlerTest {
                             AdbConfigHandler.EXTRA_OAUTH_CLIENT_REGISTRATIONS,
                             """
                             [{
-                              "client_id":"[REDACTED_OWNER_VALUE]",
+                              "client_id":"arc-00000000-0000-4000-8000-000000000001",
                               "redirect_uris":["https://evil.example/callback"]
                             }]
                             """.trimIndent(),
