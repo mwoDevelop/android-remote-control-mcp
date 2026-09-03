@@ -1,4 +1,4 @@
-<!-- AUTHORIZED AND INDEPENDENTLY REVIEWED — B1-B7 incorporated; exact pre-mutation inventory and verified encrypted backup are mandatory. -->
+<!-- IMPLEMENTED AFTER INDEPENDENT REVIEW — B1-B7 incorporated; all destructive gates and closeout checks passed. -->
 <!-- This document intentionally contains no real account, endpoint, device, topology or credential value. -->
 
 # Plan 79 — rewrite public Git history and retire historical metadata artifacts
@@ -161,6 +161,24 @@ Do not rewrite or delete anything remotely unless the encrypted archive and exac
   records are deleted;
 - the private lock points to the rewritten public SHA and private CI is green;
 - no plaintext backup, replacement file, mail map or original mirror remains after the encrypted archive is verified.
+
+## Execution result — 2026-09-03
+
+- Two encrypted copies of the pre-rewrite recovery archive were hash-compared and one was fully restored before any
+  remote mutation. The restored Git mirrors, refs and retained Release assets passed integrity checks.
+- Two independent runs of the frozen rules produced identical ref manifests. The final remote history contains the
+  expected four heads and twenty-one tags; all genuine official upstream tags retain their original objects.
+- Exhaustive scanning of the fresh remote clone covered twenty-five refs, 1,113 commits and 3,910 reachable blobs.
+  No removed configuration path or protected owner identifier remained in blobs, paths, messages, tags or identities.
+- Public CI and explicit stable and edge release dry-runs succeeded against the rewritten sources without publishing a
+  Release. Their new runs and artifacts were retained as replacement provenance.
+- The frozen five Releases, fifty-six workflow runs, one hundred fifty-one artifacts and seventy-three caches were
+  removed by numeric ID. A separate superseded rewrite-validation run was also removed; per-object absence evidence is
+  retained only in the private journal.
+- A network-fresh clone passed `git fsck --full`, exact application-tree comparisons, the public metadata policy, the
+  private exact-value denylist and all focused config/build/deploy/CLI/ledger/release tests.
+- The private source lock and closeout report are updated against this documentation-only closeout commit. Protected
+  rewrite maps and journals remain solely in the verified encrypted recovery material; plaintext copies are removed.
 
 ## Rollback boundary
 
