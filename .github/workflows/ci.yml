@@ -78,7 +78,7 @@ jobs:
             scripts/tests/test-sync-build-deploy.sh \
             scripts/tests/test-arcp-cli.sh \
             scripts/tests/test-arcp-version-ledger.sh \
-            scripts/tests/test-arcp-channel-release.sh
+            scripts/tests/test-arcp-channel-release.sh \
             scripts/tests/test-public-metadata.sh
           node --check scripts/verify-arcp-channel-features.mjs
           node --check scripts/validate-device-profiles.mjs
