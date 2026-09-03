@@ -1,6 +1,6 @@
 # Unified ARCP CLI and release entrypoint
 
-Status: independently reviewed; accepted findings incorporated; implementation in progress.
+Status: complete. Independently reviewed, implemented, deployed and verified on 2026-09-03.
 
 Independent review: `docs/reviews/77_unified_arcp_cli_and_release_entrypoint_review_20260903.md`
 
@@ -126,6 +126,33 @@ Defaults and safety rules:
 - GitHub desired state has `CI` and `ARCP channel release` active and both legacy publication workflows disabled.
 - Existing low-level security/provenance tests and the new CLI tests pass; GitHub CI is green.
 - No secrets are tracked and no Android device/application deployment is performed for this tooling-only change.
+
+## Completion evidence
+
+- Independent review approved the design with changes; the accepted findings are incorporated into this final plan
+  and implementation.
+- Focused/local validation passed: `test-arcp-cli.sh` (14/14), `test-arcp-channel-release.sh` (10/10),
+  `test-sync-build-deploy.sh` (34/34), `test-arcp-version-ledger.sh` (6/6), shell syntax, `shellcheck` for the public
+  CLI, `actionlint` for every workflow, and `git diff --check`.
+- A real `scripts/arcp build edge` completed for upstream
+  `16f39717ce0969aa81a4ec132ba1cad861ba46cc` plus local integration
+  `5f2c97aae11da77b4fd3958020c26666949b565d`. Its GMS debug APK has SHA-256
+  `a8348581b91420ad5978c53940aa6990850dad5cf04c30203be61df19bed35bf`.
+- GitHub CI run [33743097999](https://github.com/mwoDevelop/android-remote-control-mcp/actions/runs/33743097999)
+  passed lint, GMS/FOSS release builds, JVM tests and Android E2E for implementation SHA
+  `c298ee377d6e759cae02e1dde75c15909b90cbd0`.
+- `scripts/arcp github configure --apply` converged twice: `CI` and `ARCP channel release` are active;
+  `.github/workflows/edge-release.yml` and `.github/workflows/release.yml` are `disabled_manually`.
+- Exact request `arcp-20260903T102539Z-5af916b2bf5f4979` registered and resumed GitHub dry-run
+  [33744233590](https://github.com/mwoDevelop/android-remote-control-mcp/actions/runs/33744233590). The verified result
+  was `dry_run_validated` for tag preview `arcp-edge-16f39717ce09-5f2c97aae11d-vc21000003`; publication was skipped.
+- Before/after snapshots prove that the GitHub Release list was unchanged and `release/version-ledger` remained at
+  `b66b6817184ebdf0f92c8aee186a297d4e15534e`.
+- The tracked-file audit found no `.env.secrets`, `keystore.properties`, private-key or keystore artifact. No Android
+  application/device deployment was required because this change deploys repository build/release tooling only.
+- Non-blocking maintenance note: GitHub currently warns that the pinned `actions/checkout` revision targets Node.js
+  20 and is temporarily forced onto Node.js 24. This did not affect either successful run; update the pinned action in
+  a separate dependency-maintenance change after reviewing its new commit digest.
 
 ## Rollback
 
