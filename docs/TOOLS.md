@@ -164,6 +164,10 @@ Plan <N>: <Short descriptive title>
 
 ## Release Workflow
 
+> **Owner fork note:** this inherited `v*` draft-release workflow is disabled in
+> `mwoDevelop/android-remote-control-mcp` and retained only for upstream mergeability. Owner ARCP releases use
+> `./scripts/arcp release <stable|edge> [--publish]`; do not push a `v*` tag to publish an owner build.
+
 ### Overview
 
 Releases are created automatically via GitHub Actions when a semantic version tag is pushed. The workflow creates a **draft** release (never auto-published) with:
@@ -496,8 +500,8 @@ gh act --secret-file .secrets
 | Create PR | `gh pr create --base main --title "..." --body "..."` |
 | Reply to PR comment | `gh api repos/.../pulls/<n>/comments -f body="..." -F in_reply_to=<id>` |
 | Resolve PR thread | `gh api graphql -f query='mutation { resolveReviewThread(...) }'` |
-| Create release tag | `git tag v1.2.3 && git push origin v1.2.3` |
-| Create pre-release tag | `git tag v1.2.3-rc1 && git push origin v1.2.3-rc1` |
+| Create owner ARCP dry-run | `./scripts/arcp release edge` |
+| Publish owner ARCP release | `./scripts/arcp release stable --publish` |
 | Validate CI | `gh act --validate` |
 | Dry-run CI | `gh act -n` |
 | Run CI job | `gh act -j <job-id>` |

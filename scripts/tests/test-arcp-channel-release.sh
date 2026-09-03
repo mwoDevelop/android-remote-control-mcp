@@ -119,7 +119,7 @@ sign_bundle() {
 }
 
 test_workflow_contract() {
-  local workflow="$REPO_ROOT/.github/workflows/arcp-channel-release.yml"
+  local workflow="$REPO_ROOT/.github/workflows/arcp-channel-release.yml" resolve preview reserve sign publish
   local legacy_workflow="$REPO_ROOT/.github/workflows/edge-release.yml"
   [[ -f "$workflow" ]]
   [[ -f "$legacy_workflow" ]]
@@ -131,10 +131,29 @@ test_workflow_contract() {
   grep -Fq 'scripts/sign-arcp-channel-release.sh' "$workflow"
   grep -Fq 'scripts/publish-arcp-channel-release.sh' "$workflow"
   grep -Fq './gradlew :app:testGmsDebugUnitTest --tests' "$workflow"
+  grep -Fq 'request_id:' "$workflow"
+  grep -Fq 'expected_source_sha:' "$workflow"
+  grep -Fq 'expected_local_sha:' "$workflow"
+  grep -Fq -- '--expected-source-sha' "$workflow"
+  grep -Fq -- '--expected-local-sha' "$workflow"
+  grep -Fq 'request_id must be 8-80 allowlisted ASCII characters' "$workflow"
+  grep -Fq 'dry_run_validated' "$workflow"
+  grep -Fq 'existing_verified_noop' "$workflow"
+  grep -Fq 'Publication was requested but ENABLE_ARCP_RELEASE_PUBLISHING is not true' "$workflow"
+  resolve="$(sed -n '/^  resolve:/,/^  preview-version:/p' "$workflow")"
+  preview="$(sed -n '/^  preview-version:/,/^  reserve-version:/p' "$workflow")"
+  reserve="$(sed -n '/^  reserve-version:/,/^  build:/p' "$workflow")"
+  sign="$(sed -n '/^  sign:/,/^  publish:/p' "$workflow")"
+  publish="$(sed -n '/^  publish:/,$p' "$workflow")"
+  [[ "$resolve" == *'contents: read'* && "$resolve" != *'contents: write'* ]]
+  [[ "$preview" == *'contents: read'* && "$preview" != *'contents: write'* ]]
+  [[ "$reserve" == *'if: ${{ inputs.publish }}'* && "$reserve" == *'contents: write'* ]]
+  [[ "$sign" == *'contents: read'* && "$sign" != *'contents: write'* ]]
+  [[ "$publish" == *'if: ${{ inputs.publish }}'* && "$publish" == *'contents: write'* ]]
   ! grep -Fq 'sign-upstream-channel-release.sh' "$workflow"
   grep -Eq '^  workflow_dispatch:' "$legacy_workflow"
   ! grep -Eq '^  (push|schedule):' "$legacy_workflow"
-  pass 'workflow separates static, live and signing trust boundaries'
+  pass 'workflow pins caller sources and separates dry-run from write-capable publication'
 }
 
 test_artifact_json_loading_contract() {

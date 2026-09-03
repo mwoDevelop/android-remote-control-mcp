@@ -15,8 +15,15 @@ Common privileged implementations remain in owner packages and the `shizuku-admi
 Historical `upstream-v*` and `upstream-edge` releases are retained only as audit evidence. They omit local features
 and must not be installed on [REDACTED_DEVICE_ALIAS] or [REDACTED_DEVICE_ALIAS].
 
-The mutable legacy `edge` publisher is also retained only for explicit manual recovery/audit. It has no `push` or
-scheduled trigger. New device releases must use the immutable `arcp-*` workflow and version ledger below.
+The mutable legacy `edge` publisher and inherited `v*` draft publisher remain in Git for audit and upstream
+mergeability, but both are disabled in the owner repository. New device releases must use the immutable `arcp-*`
+workflow and version ledger below. Verify or converge the repository metadata with:
+
+```bash
+./scripts/arcp github status
+./scripts/arcp github configure             # preview with rollback commands
+./scripts/arcp github configure --apply     # enable CI/ARCP and disable both legacy publishers
+```
 
 ## Source, version and release contract
 
@@ -46,12 +53,33 @@ The signing environment contains, by name, `RELEASE_KEYSTORE_BASE64`, `RELEASE_K
 `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`, `RELEASE_CERTIFICATE_SHA256` and
 `ENABLE_ARCP_RELEASE_PUBLISHING=true`. Never store their values in Git.
 
-Start a dry run or publication with GitHub CLI:
+Use the single public CLI for routine builds and releases:
 
 ```bash
-gh workflow run arcp-channel-release.yml -f channel=edge -f revision=1 -f publish=false
-gh workflow run arcp-channel-release.yml -f channel=edge -f revision=1 -f publish=true
+./scripts/arcp build stable
+./scripts/arcp build edge --variant fossDebug
+./scripts/arcp release edge
+./scripts/arcp release stable --publish
 ```
+
+Channel `build` accepts debug variants only. The `release` command is the sole route to signed stable/edge Release
+artifacts: it authoritatively fetches `main`, requires a clean pushed checkout, resolves and pins both full channel
+SHAs, dispatches with an allowlisted request ID, discovers the exact run, and waits by default. A queued run fails
+closed if either source ref moves. `--no-wait` still waits for Actions registration and prints exact `request_id`,
+`run_id`, and `url`; resume it with:
+
+```bash
+./scripts/arcp release status --request-id <request-id> --watch
+```
+
+Revision `1` is the normal identity. Use `--revision 2` or greater only for a deliberate repair of the same source
+identity. A dry-run previews rather than reserves the version-ledger entry and has no write-capable job. Publication
+requires literal `--publish`, an enabled publication gate, and a write-capable job separated from signing. The CLI
+verifies the resulting immutable release identity after success.
+
+For CI/recovery troubleshooting only, the underlying interfaces remain
+`sync-build-deploy.sh`, `arcp-version-ledger.sh`, `sign-arcp-channel-release.sh`, and
+`publish-arcp-channel-release.sh`; routine users should not compose them manually.
 
 ## Released APK verification and [REDACTED_DEVICE_ALIAS] promotion
 

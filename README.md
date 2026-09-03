@@ -157,6 +157,20 @@ This fork has two reviewed owner channels selected by their official baseline:
 Both include the owner extensions and publish immutable GMS/FOSS bundles. Historical `upstream-*` mirror releases are
 audit-only and must not be used for managed-device delivery. Arbitrary developer branches are not release channels.
 
+Routine owner builds and releases use one public entrypoint:
+
+```bash
+./scripts/arcp build stable
+./scripts/arcp build edge --variant fossDebug
+./scripts/arcp release edge                  # qualified dry-run
+./scripts/arcp release stable --publish      # immutable GitHub Release
+```
+
+Only `CI` and `ARCP channel release` should be enabled in the owner repository. Converge or inspect this GitHub state
+with `./scripts/arcp github configure --apply` and `./scripts/arcp github status`. The inherited `Release` and
+`Legacy Edge Release (manual only)` definitions remain in Git for upstream mergeability and audit, but are disabled
+as repository metadata and are not owner release entrypoints.
+
 See [ARCP stable and edge releases](docs/ARCP_CHANNEL_RELEASES.md) for source topology, version ledger, protected
 workflow, released-APK verification and [REDACTED_DEVICE_ALIAS] promotion.
 
@@ -384,8 +398,8 @@ Validate both directories and their shared schema with:
 ./scripts/verify-device-configs.sh
 ```
 
-The guarded local delivery workflow is defined in
-[`scripts/sync-build-deploy.sh`](scripts/sync-build-deploy.sh). Its `sync` command fetches the official upstream and
+Routine builds and releases use [`scripts/arcp`](scripts/arcp). The lower-level guarded delivery implementation is
+[`scripts/sync-build-deploy.sh`](scripts/sync-build-deploy.sh): its `sync` command fetches the official upstream and
 creates a review branch only when the selected upstream ref is not already integrated;
 `all` builds and deploys the already checked-out reviewed commit and never fetches or merges. Mutation commands
 require the literal `--apply` flag, an explicit device, matching device identity, a qualified local build manifest,
@@ -394,7 +408,7 @@ and matching installed/candidate signing certificates.
 Pinned native dependencies use the same entrypoint with explicit refs, for example
 `./scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply`; vendor updates must be fast-forwards.
 
-The `build` command also has two explicit ARCP channel modes. `--latest-stable` resolves the newest official strict
+The internal `build` command also has two explicit ARCP channel modes. `--latest-stable` resolves the newest official strict
 `vMAJOR.MINOR.PATCH` baseline and builds the reviewed `origin/release/stable` integration; `--latest-edge` resolves the
 official moving `edge` tag and builds `origin/release/edge`. Both branches contain the local administrator, Shizuku,
 trusted unlock/sleep and recovery features. The resolver proves the corresponding official baseline is an ancestor,
@@ -402,10 +416,12 @@ rejects edge ancestry on stable, binds both full SHAs and exact submodule SHAs i
 release branch implicitly. Installable channel builds require an explicit version allocated by the append-only
 `release/version-ledger` ref.
 
-The manual `ARCP channel release` workflow builds both GMS and FOSS without secrets, runs the live ngrok test in a
+`./scripts/arcp release <stable|edge>` dispatches the manual `ARCP channel release` workflow with pinned full source
+SHAs and an exact request ID. It builds both GMS and FOSS without secrets, runs the live ngrok test in a
 separate `arcp-live-tests` environment, and signs only after both gates pass. It publishes immutable namespaced tags;
-edge releases are GitHub pre-releases. Historical `upstream-*` mirror releases contain no local features and must not
-be installed on managed devices. See [ARCP channel releases](docs/ARCP_CHANNEL_RELEASES.md).
+edge releases are GitHub pre-releases. Dry-run is the default and `--publish` is required for publication. Historical
+`upstream-*` mirror releases contain no local features and must not be installed on managed devices. See
+[ARCP channel releases](docs/ARCP_CHANNEL_RELEASES.md).
 
 Every local build compiles the pinned host `cloudflared` into ignored `build/host-tools/` and adds it to the test
 process `PATH`; the Cloudflare integration gate therefore does not depend on a separately installed host binary. If
@@ -414,9 +430,11 @@ ignored directory, so no system-wide installation is required (Docker is the fal
 
 ```bash
 ./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
-./scripts/sync-build-deploy.sh build --variant gmsDebug
-./scripts/sync-build-deploy.sh channel-info --latest-stable
-./scripts/sync-build-deploy.sh channel-info --latest-edge
+./scripts/arcp build
+./scripts/arcp build stable
+./scripts/arcp build edge --variant fossDebug
+./scripts/arcp release edge
+./scripts/arcp release stable --publish
 ./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
 ```
 

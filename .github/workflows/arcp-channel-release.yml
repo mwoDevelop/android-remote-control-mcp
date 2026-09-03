@@ -1,5 +1,10 @@
 name: ARCP channel release
 
+run-name: >-
+  ARCP ${{ inputs.channel }} r${{ inputs.revision }}
+  ${{ inputs.publish && 'publish' || 'dry-run' }}
+  [${{ inputs.request_id || github.run_id }}]
+
 on:
   workflow_dispatch:
     inputs:
@@ -20,6 +25,21 @@ on:
         required: true
         default: false
         type: boolean
+      request_id:
+        description: Optional validated caller correlation ID; blank UI runs use the GitHub run ID
+        required: false
+        default: ''
+        type: string
+      expected_source_sha:
+        description: Optional pinned full official-upstream SHA; blank resolves latest when the run starts
+        required: false
+        default: ''
+        type: string
+      expected_local_sha:
+        description: Optional pinned full owner-channel SHA; blank resolves latest when the run starts
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -30,19 +50,17 @@ concurrency:
 
 jobs:
   resolve:
-    name: Resolve source and version identity
+    name: Resolve pinned source identity
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
     outputs:
       channel: ${{ steps.resolve.outputs.channel }}
       upstream_label: ${{ steps.resolve.outputs.upstream_label }}
       upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
       local_sha: ${{ steps.resolve.outputs.local_sha }}
-      version_code: ${{ steps.resolve.outputs.version_code }}
       version_name: ${{ steps.resolve.outputs.version_name }}
-      release_tag: ${{ steps.resolve.outputs.release_tag }}
     steps:
       - name: Checkout trusted automation source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -64,32 +82,134 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
           REVISION: ${{ inputs.revision }}
-          PUBLISH: ${{ inputs.publish }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_LOCAL_SHA: ${{ inputs.expected_local_sha }}
         run: |
           set -euo pipefail
-          [[ "$REVISION" =~ ^[1-9][0-9]*$ ]]
-          channel_json="$(scripts/sync-build-deploy.sh channel-info "--latest-$CHANNEL")"
+          [[ "$REVISION" =~ ^[1-9][0-9]{0,3}$ ]] || {
+            echo '::error::revision must be an integer from 1 through 9999'; exit 1;
+          }
+          [[ -z "$REQUEST_ID" || "$REQUEST_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$ ]] || {
+            echo '::error::request_id must be 8-80 allowlisted ASCII characters'; exit 1;
+          }
+          [[ -z "$EXPECTED_SOURCE_SHA" || "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo '::error::expected_source_sha must be blank or a full SHA'; exit 1;
+          }
+          [[ -z "$EXPECTED_LOCAL_SHA" || "$EXPECTED_LOCAL_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo '::error::expected_local_sha must be blank or a full SHA'; exit 1;
+          }
+          channel_args=(channel-info "--latest-$CHANNEL")
+          [[ -z "$EXPECTED_SOURCE_SHA" ]] || channel_args+=(--expected-source-sha "${EXPECTED_SOURCE_SHA,,}")
+          [[ -z "$EXPECTED_LOCAL_SHA" ]] || channel_args+=(--expected-local-sha "${EXPECTED_LOCAL_SHA,,}")
+          channel_json="$(scripts/sync-build-deploy.sh "${channel_args[@]}")"
           upstream_label="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).upstream_label)' "$channel_json")"
           upstream_sha="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).upstream_sha)' "$channel_json")"
           local_sha="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).local_sha)' "$channel_json")"
-          ledger_args=(allocate --channel "$CHANNEL" --upstream-label "$upstream_label" \
-            --upstream-sha "$upstream_sha" --local-sha "$local_sha" --revision "$REVISION")
-          [[ "$PUBLISH" != true ]] || ledger_args+=(--apply)
-          scripts/arcp-version-ledger.sh "${ledger_args[@]}" > ledger-entry.json
-          version_code="$(node -e 'process.stdout.write(String(require("./ledger-entry.json").version_code))')"
-          release_tag="$(node -e 'process.stdout.write(require("./ledger-entry.json").release_tag)')"
           version_name="arcp.${CHANNEL}.${upstream_label#v}.${local_sha:0:12}.r${REVISION}"
           {
             printf 'channel=%s\n' "$CHANNEL"
             printf 'upstream_label=%s\n' "$upstream_label"
             printf 'upstream_sha=%s\n' "$upstream_sha"
             printf 'local_sha=%s\n' "$local_sha"
-            printf 'version_code=%s\n' "$version_code"
             printf 'version_name=%s\n' "$version_name"
-            printf 'release_tag=%s\n' "$release_tag"
           } >> "$GITHUB_OUTPUT"
+          {
+            printf 'request_id=%s\n' "${REQUEST_ID:-manual-$GITHUB_RUN_ID}"
+            printf 'upstream_sha=%s\n' "$upstream_sha"
+            printf 'local_sha=%s\n' "$local_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload exact ledger entry
+  preview-version:
+    name: Preview version identity (read-only)
+    if: ${{ !inputs.publish }}
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version_code: ${{ steps.version.outputs.version_code }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - name: Checkout trusted automation source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Preview unreserved version identity
+        id: version
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          UPSTREAM_LABEL: ${{ needs.resolve.outputs.upstream_label }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+          LOCAL_SHA: ${{ needs.resolve.outputs.local_sha }}
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          scripts/arcp-version-ledger.sh allocate --channel "$CHANNEL" --upstream-label "$UPSTREAM_LABEL" \
+            --upstream-sha "$UPSTREAM_SHA" --local-sha "$LOCAL_SHA" --revision "$REVISION" > ledger-entry.json
+          printf 'version_code=%s\n' \
+            "$(node -e 'process.stdout.write(String(require("./ledger-entry.json").version_code))')" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' \
+            "$(node -e 'process.stdout.write(require("./ledger-entry.json").release_tag)')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact preview ledger entry
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arcp-ledger-${{ github.run_id }}
+          path: ledger-entry.json
+          if-no-files-found: error
+          retention-days: 3
+
+  reserve-version:
+    name: Reserve version identity for publication
+    if: ${{ inputs.publish }}
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    environment: upstream-releases
+    outputs:
+      version_code: ${{ steps.version.outputs.version_code }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - name: Require publication activation
+        env:
+          ENABLE_PUBLICATION: ${{ vars.ENABLE_ARCP_RELEASE_PUBLISHING }}
+        run: |
+          [[ "$ENABLE_PUBLICATION" == true ]] || {
+            echo '::error::Publication was requested but ENABLE_ARCP_RELEASE_PUBLISHING is not true'; exit 1;
+          }
+
+      - name: Checkout trusted automation source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Reserve immutable version identity
+        id: version
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          UPSTREAM_LABEL: ${{ needs.resolve.outputs.upstream_label }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+          LOCAL_SHA: ${{ needs.resolve.outputs.local_sha }}
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          scripts/arcp-version-ledger.sh allocate --channel "$CHANNEL" --upstream-label "$UPSTREAM_LABEL" \
+            --upstream-sha "$UPSTREAM_SHA" --local-sha "$LOCAL_SHA" --revision "$REVISION" --apply > ledger-entry.json
+          printf 'version_code=%s\n' \
+            "$(node -e 'process.stdout.write(String(require("./ledger-entry.json").version_code))')" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' \
+            "$(node -e 'process.stdout.write(require("./ledger-entry.json").release_tag)')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact reserved ledger entry
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: arcp-ledger-${{ github.run_id }}
@@ -99,7 +219,10 @@ jobs:
 
   build:
     name: Secretless static qualification
-    needs: resolve
+    needs: [resolve, preview-version, reserve-version]
+    if: >-
+      ${{ always() && needs.resolve.result == 'success' &&
+          (needs.preview-version.result == 'success' || needs.reserve-version.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -154,7 +277,7 @@ jobs:
           CHANNEL: ${{ needs.resolve.outputs.channel }}
           UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
           LOCAL_SHA: ${{ needs.resolve.outputs.local_sha }}
-          VERSION_CODE: ${{ needs.resolve.outputs.version_code }}
+          VERSION_CODE: ${{ needs.reserve-version.outputs.version_code || needs.preview-version.outputs.version_code }}
           VERSION_NAME: ${{ needs.resolve.outputs.version_name }}
         run: |
           set -euo pipefail
@@ -178,7 +301,10 @@ jobs:
 
   live-ngrok:
     name: Protected live ngrok qualification
-    needs: resolve
+    needs: [resolve, preview-version, reserve-version]
+    if: >-
+      ${{ always() && needs.resolve.result == 'success' &&
+          (needs.preview-version.result == 'success' || needs.reserve-version.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -238,13 +364,17 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  sign-and-publish:
-    name: Sign and publish immutable release
-    needs: [resolve, build, live-ngrok]
+  sign:
+    name: Sign and independently verify release bundle
+    needs: [resolve, preview-version, reserve-version, build, live-ngrok]
+    if: >-
+      ${{ always() && needs.resolve.result == 'success' && needs.build.result == 'success' &&
+          needs.live-ngrok.result == 'success' &&
+          (needs.preview-version.result == 'success' || needs.reserve-version.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write
+      contents: read
     environment: upstream-releases
     steps:
       - name: Checkout exact trusted automation commit
@@ -266,18 +396,15 @@ jobs:
           pattern: arcp-*-${{ github.run_id }}
           path: build/inputs
 
-      - name: Sign, independently verify and publish or dry-run
+      - name: Sign and independently verify
         shell: bash
         env:
           CHANNEL: ${{ needs.resolve.outputs.channel }}
-          REQUEST_PUBLICATION: ${{ inputs.publish }}
-          ENABLE_PUBLICATION: ${{ vars.ENABLE_ARCP_RELEASE_PUBLISHING }}
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           EXPECTED_CERTIFICATE_SHA256: ${{ vars.RELEASE_CERTIFICATE_SHA256 }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git remote remove upstream 2>/dev/null || true
@@ -304,13 +431,26 @@ jobs:
             --workflow-run-id "$GITHUB_RUN_ID" --workflow-source-sha "$GITHUB_SHA"
           cleanup
           trap - EXIT INT TERM
-          if [[ "$REQUEST_PUBLICATION" == true && "$ENABLE_PUBLICATION" == true ]]; then
-            scripts/publish-arcp-channel-release.sh --release-dir "$output" \
-              --repo "$GITHUB_REPOSITORY" --apply
-          else
-            scripts/publish-arcp-channel-release.sh --release-dir "$output" \
-              --repo "$GITHUB_REPOSITORY"
-          fi
+          scripts/publish-arcp-channel-release.sh --release-dir "$output" \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Record validated dry-run result
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+          LOCAL_SHA: ${{ needs.resolve.outputs.local_sha }}
+        run: |
+          node -e '
+            const fs=require("fs"), [out,manifestPath,requestId,runId,channel,upstreamSha,localSha]=process.argv.slice(1);
+            const manifest=JSON.parse(fs.readFileSync(manifestPath,"utf8"));
+            fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"arcp_release_result",
+              status:"dry_run_validated",request_id:requestId||("manual-"+runId),run_id:Number(runId),channel,
+              upstream_sha:upstreamSha,local_sha:localSha,release_tag:manifest.release_tag},null,2)+"\n");
+          ' release-result.json "build/arcp-release-$CHANNEL/release-manifest.json" "$REQUEST_ID" \
+            "$GITHUB_RUN_ID" "$CHANNEL" "$UPSTREAM_SHA" "$LOCAL_SHA"
 
       - name: Upload signed evidence
         if: always()
@@ -320,3 +460,89 @@ jobs:
           path: build/arcp-release-${{ needs.resolve.outputs.channel }}/*
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload dry-run result
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arcp-result-${{ github.run_id }}
+          path: release-result.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish immutable release
+    if: ${{ inputs.publish }}
+    needs: [resolve, reserve-version, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    environment: upstream-releases
+    steps:
+      - name: Require publication activation
+        env:
+          ENABLE_PUBLICATION: ${{ vars.ENABLE_ARCP_RELEASE_PUBLISHING }}
+        run: |
+          [[ "$ENABLE_PUBLICATION" == true ]] || {
+            echo '::error::Publication was requested but ENABLE_ARCP_RELEASE_PUBLISHING is not true'; exit 1;
+          }
+
+      - name: Checkout exact trusted automation commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Download signed closed bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: arcp-signed-${{ needs.resolve.outputs.channel }}-${{ github.run_id }}
+          path: build/arcp-release-${{ needs.resolve.outputs.channel }}
+
+      - name: Publish and record result
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+          LOCAL_SHA: ${{ needs.resolve.outputs.local_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/danielealbano/android-remote-control-mcp.git
+          git remote set-url --push upstream DISABLED
+          output="build/arcp-release-$CHANNEL"
+          release_tag="$(node -e '
+            const fs=require("fs");
+            process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).release_tag);
+          ' "$output/release-manifest.json")"
+          status=published
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            status=existing_verified_noop
+          fi
+          scripts/publish-arcp-channel-release.sh --release-dir "$output" \
+            --repo "$GITHUB_REPOSITORY" --apply
+          node -e '
+            const fs=require("fs"), [out,status,requestId,runId,channel,upstreamSha,localSha,tag]=process.argv.slice(1);
+            fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"arcp_release_result",status,
+              request_id:requestId||("manual-"+runId),run_id:Number(runId),channel,upstream_sha:upstreamSha,
+              local_sha:localSha,release_tag:tag},null,2)+"\n");
+          ' release-result.json "$status" "$REQUEST_ID" "$GITHUB_RUN_ID" "$CHANNEL" "$UPSTREAM_SHA" \
+            "$LOCAL_SHA" "$release_tag"
+
+      - name: Upload publication result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arcp-result-${{ github.run_id }}
+          path: release-result.json
+          if-no-files-found: error
+          retention-days: 30

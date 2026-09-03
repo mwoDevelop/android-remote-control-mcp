@@ -67,15 +67,18 @@ jobs:
       - name: Validate release automation shell and contracts
         run: |
           bash -n scripts/sync-build-deploy.sh \
+            scripts/arcp \
             scripts/arcp-version-ledger.sh \
             scripts/arcp-release-artifact.sh \
             scripts/sign-arcp-channel-release.sh \
             scripts/publish-arcp-channel-release.sh \
             scripts/tests/test-sync-build-deploy.sh \
+            scripts/tests/test-arcp-cli.sh \
             scripts/tests/test-arcp-version-ledger.sh \
             scripts/tests/test-arcp-channel-release.sh
           node --check scripts/verify-arcp-channel-features.mjs
           scripts/tests/test-sync-build-deploy.sh
+          scripts/tests/test-arcp-cli.sh
           scripts/tests/test-arcp-version-ledger.sh
           scripts/tests/test-arcp-channel-release.sh
 
