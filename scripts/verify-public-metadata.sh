@@ -14,7 +14,11 @@ report_matches() {
   local category="$1" pattern="$2"
   shift 2
   local output
-  output="$(rg -n -i --no-heading --color never --pcre2 "$pattern" "$@" 2>/dev/null | awk -F: '{print $1 ":" $2}' | sort -u || true)"
+  if command -v rg >/dev/null 2>&1; then
+    output="$(rg -n -i --no-heading --color never "$pattern" "$@" 2>/dev/null | awk -F: '{print $1 ":" $2}' | sort -u || true)"
+  else
+    output="$(grep -Eni "$pattern" "$@" 2>/dev/null | awk -F: '{print $1 ":" $2}' | sort -u || true)"
+  fi
   while IFS= read -r location; do [[ -z "$location" ]] || report_path "$category" "$location"; done <<<"$output"
 }
 
@@ -52,7 +56,7 @@ domain_pattern='[.]pp[.]ua([/:]|$)'
 report_matches "named private device or security-product metadata" "$alias_pattern" "${scan_files[@]}"
 report_matches "private domain metadata" "$domain_pattern" "${scan_files[@]}"
 report_matches "non-upstream personal account email" '@gmail[.]com' "${email_files[@]}"
-report_matches "exact private-network host outside tests" '(?<![0-9])(10[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}|172[.](1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3})(:[0-9]+)?(?![0-9])' "${network_files[@]}"
+report_matches "exact private-network host outside tests" '(^|[^0-9])(10[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}|172[.](1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3})(:[0-9]+)?([^0-9]|$)' "${network_files[@]}"
 
 [[ "$failed" == false ]] || exit 1
 printf 'OK: tracked public tree contains no forbidden owner configuration metadata or generated artifacts.\n'
