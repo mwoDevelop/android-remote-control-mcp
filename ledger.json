@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "next_version_code": 21000004,
+  "next_version_code": 21000005,
   "android_max_version_code": 2100000000,
   "entries": [
     {
@@ -42,6 +42,16 @@
       "revision": 1,
       "version_code": 21000003,
       "release_tag": "arcp-stable-v1.12.0-29c91bc42717-vc21000003"
+    },
+    {
+      "identity": "edge:edge:16f39717ce0969aa81a4ec132ba1cad861ba46cc:da493d6659f0cf28f21b7435411b2a77ead702e0:r1",
+      "channel": "edge",
+      "upstream_label": "edge",
+      "upstream_sha": "16f39717ce0969aa81a4ec132ba1cad861ba46cc",
+      "local_sha": "da493d6659f0cf28f21b7435411b2a77ead702e0",
+      "revision": 1,
+      "version_code": 21000004,
+      "release_tag": "arcp-edge-16f39717ce09-da493d6659f0-vc21000004"
     }
   ]
 }
