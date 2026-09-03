@@ -44,6 +44,25 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "Required command is unavailable: $1"; }
 
+configure_android_sdk() {
+  local candidate
+  if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME" ]]; then
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    return
+  fi
+  if [[ -n "${ANDROID_SDK_ROOT:-}" && -d "$ANDROID_SDK_ROOT" ]]; then
+    export ANDROID_HOME="$ANDROID_SDK_ROOT"
+    return
+  fi
+  for candidate in "$HOME/android-sdk" "$HOME/Android/Sdk" "$HOME/.local/share/android-sdk"; do
+    if [[ -x "$candidate/cmdline-tools/latest/bin/sdkmanager" || -d "$candidate/platforms" ]]; then
+      export ANDROID_HOME="$candidate"
+      export ANDROID_SDK_ROOT="$candidate"
+      return
+    fi
+  done
+}
+
 json_value() {
   node -e '
     const value=process.argv[2].split(".").reduce((v,k)=>v==null?undefined:v[k],JSON.parse(process.argv[1]));
@@ -203,6 +222,7 @@ build_command() {
   if [[ "$source" == local && "$variant" == *Release && ! -f "$REPO_ROOT/keystore.properties" ]]; then
     die "Local Release build requires ignored keystore.properties; use 'scripts/arcp release' for channel releases"
   fi
+  configure_android_sdk
   args=(build --variant "$variant")
   [[ "$source" == local ]] || args+=("--latest-$source")
   [[ "$skip" == false ]] || args+=(--skip-e2e-compile)

@@ -102,6 +102,9 @@ Defaults and safety rules:
 4. Exercise both stable/edge delegations in tests and live read-only `channel-info` resolution for both channels. Run
    one real representative channel debug build through `scripts/arcp build`; the other channel may remain a mocked
    delegation because the unchanged backend has its own contract suite.
+   The first live attempt correctly reached the backend but exposed an unset SDK root and missing pinned NDK on the
+   host; keep common SDK-root discovery in the public wrapper, install the already-pinned NDK as a host prerequisite,
+   then repeat the exact build.
 5. Push the implementation commit to `origin/main`, monitor the resulting CI run to success, then run
    `scripts/arcp github configure --apply` and verify that only `ARCP channel release` and `CI` remain active.
 6. Snapshot releases and `release/version-ledger`, then exercise a real `scripts/arcp release edge --no-wait` dry-run

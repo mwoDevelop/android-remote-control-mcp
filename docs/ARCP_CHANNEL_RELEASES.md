@@ -77,6 +77,10 @@ identity. A dry-run previews rather than reserves the version-ledger entry and h
 requires literal `--publish`, an enabled publication gate, and a write-capable job separated from signing. The CLI
 verifies the resulting immutable release identity after success.
 
+For local builds, `scripts/arcp` honors `ANDROID_HOME`/`ANDROID_SDK_ROOT` and otherwise detects the common
+`~/android-sdk`, `~/Android/Sdk`, or `~/.local/share/android-sdk` layout. The pinned NDK package declared by the build
+must be installed in that SDK.
+
 For CI/recovery troubleshooting only, the underlying interfaces remain
 `sync-build-deploy.sh`, `arcp-version-ledger.sh`, `sign-arcp-channel-release.sh`, and
 `publish-arcp-channel-release.sh`; routine users should not compose them manually.
