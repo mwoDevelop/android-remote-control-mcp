@@ -296,5 +296,5 @@ plan, explicit authorization, verified backups and a release/provenance migratio
   certificates, signing keys or Android security configuration;
 - changing externally visible endpoints or deploying replacement infrastructure;
 - rewriting published Git history, tags or releases;
-- requesting GitHub cache/support purges;
+- pursuing removal of unreachable server-side objects beyond the repository APIs used by this project;
 - making upstream application classes depend on owner-specific infrastructure.
