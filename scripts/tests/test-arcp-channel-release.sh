@@ -161,24 +161,24 @@ test_artifact_json_loading_contract() {
   [[ -f "$artifact_script" ]]
   ! grep -Eq 'require\(process\.argv\[[12]\]\)' "$artifact_script"
   grep -Fq 'JSON.parse(fs.readFileSync(process.argv[1],"utf8"))' "$artifact_script"
-  grep -Fq 'bedroom-tv' "$artifact_script"
+  grep -Fq 'deployment_mode)" == first_install' "$artifact_script"
   grep -Fq 'package_pre_state:"absent"' "$artifact_script"
   grep -Fq 'FIRST_INSTALL_ROLLBACK=true' "$artifact_script"
   pass 'release verification parses JSON content independently of filename extension'
 }
 
-test_bedroom_tv_absent_package_probe() {
+test_first_install_absent_package_probe() {
   local artifact_script="$REPO_ROOT/scripts/arcp-release-artifact.sh" output
   eval "$(sed -n '/^package_path_or_empty() {/,/^}/p' "$artifact_script")"
 
   fake_adb() { return 1; }
   ADB=(fake_adb)
-  SERIAL=bedroom-tv-test
+  SERIAL=first-install-test
   PACKAGE_ID=com.example.absent
 
   output="$(package_path_or_empty)"
   [[ -z "$output" ]]
-  pass 'Bedroom TV first-install treats an absent package as the expected empty pre-state'
+  pass 'generic first-install treats an absent package as the expected empty pre-state'
 }
 
 test_sign_and_dry_run() {
@@ -250,7 +250,7 @@ touch "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-passw
 chmod 600 "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 test_workflow_contract
 test_artifact_json_loading_contract
-test_bedroom_tv_absent_package_probe
+test_first_install_absent_package_probe
 test_sign_and_dry_run
 test_relative_signing_paths
 test_failures

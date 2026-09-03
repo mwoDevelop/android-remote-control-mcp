@@ -7,6 +7,7 @@ unset [REDACTED_DEVICE_ALIAS]_PIN [REDACTED_DEVICE_ALIAS]_PIN NGROK_AUTHTOKEN AN
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+source "$SCRIPT_DIR/lib/arcp-config-root.sh"
 PACKAGE_ID="com.danielealbano.androidremotecontrolmcp"
 REPOSITORY="mwoDevelop/android-remote-control-mcp"
 COMMAND="${1:-}"
@@ -14,6 +15,7 @@ shift || true
 TAG=""
 RELEASE_DIR=""
 DEVICE=""
+CONFIG_ROOT=""
 SERIAL=""
 VARIANT="gmsRelease"
 APPLY=false
@@ -27,12 +29,13 @@ usage() {
 Usage:
   scripts/arcp-release-artifact.sh download --tag <immutable-tag> --dir <empty-dir> [--repo owner/repo]
   scripts/arcp-release-artifact.sh verify   --tag <immutable-tag> --dir <dir> [--repo owner/repo]
-  scripts/arcp-release-artifact.sh deploy   --tag <immutable-tag> --dir <dir> --device <[REDACTED_DEVICE_ALIAS]|bedroom-tv> \
-    [--serial <adb-serial>] [--variant gmsRelease|fossRelease] [--repo owner/repo] [--apply]
+  scripts/arcp-release-artifact.sh deploy   --tag <immutable-tag> --dir <dir> --profile <name> \
+    [--config-root <absolute-directory>] [--serial <adb-serial>] [--variant gmsRelease|fossRelease] \
+    [--repo owner/repo] [--apply]
 
 download always verifies the downloaded closed asset set. deploy is a preview unless --apply is present and never
-clears application data. The Bedroom TV path is a strict first install and rolls back only a package installed by
-the same failed invocation when its verified pre-state was absent.
+clears application data. Profiles with deployment_mode=first_install roll back only a package installed by the same
+failed invocation when their verified pre-state was absent. --device is a deprecated alias for --profile.
 EOF
 }
 
@@ -79,7 +82,7 @@ package_path_or_empty() {
 
 cleanup() {
   if [[ "$FIRST_INSTALL_ROLLBACK" == true && -n "$FIRST_INSTALL_SERIAL" ]]; then
-    printf 'ROLLBACK: removing the failed Bedroom TV first installation\n' >&2
+    printf 'ROLLBACK: removing the failed first installation\n' >&2
     "${ADB[@]}" -s "$FIRST_INSTALL_SERIAL" uninstall "$PACKAGE_ID" >/dev/null 2>&1 || true
   fi
   [[ -z "$TEMP_DIR" || ! -d "$TEMP_DIR" ]] || rm -rf -- "$TEMP_DIR"
@@ -92,7 +95,8 @@ while (($#)); do
     --tag) (($# >= 2)) || die "$1 requires a value"; TAG="$2"; shift 2 ;;
     --dir) (($# >= 2)) || die "$1 requires a value"; RELEASE_DIR="$2"; shift 2 ;;
     --repo) (($# >= 2)) || die "$1 requires a value"; REPOSITORY="$2"; shift 2 ;;
-    --device) (($# >= 2)) || die "$1 requires a value"; DEVICE="$2"; shift 2 ;;
+    --profile|--device) (($# >= 2)) || die "$1 requires a value"; DEVICE="$2"; shift 2 ;;
+    --config-root) (($# >= 2)) || die "$1 requires a value"; CONFIG_ROOT="$2"; shift 2 ;;
     --serial) (($# >= 2)) || die "$1 requires a value"; SERIAL="$2"; shift 2 ;;
     --variant) (($# >= 2)) || die "$1 requires a value"; VARIANT="$2"; shift 2 ;;
     --apply) APPLY=true; shift ;;
@@ -107,12 +111,10 @@ done
 [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "Invalid repository"
 [[ "$VARIANT" == gmsRelease || "$VARIANT" == fossRelease ]] || die "Invalid variant"
 if [[ "$COMMAND" != deploy ]]; then
-  [[ -z "$DEVICE" && -z "$SERIAL" && "$APPLY" == false && "$VARIANT" == gmsRelease ]] ||
+  [[ -z "$DEVICE" && -z "$CONFIG_ROOT" && -z "$SERIAL" && "$APPLY" == false && "$VARIANT" == gmsRelease ]] ||
     die "Device options belong only to deploy"
 else
-  [[ "$DEVICE" == [REDACTED_DEVICE_ALIAS] || "$DEVICE" == bedroom-tv ]] ||
-    die "This promotion path accepts only --device [REDACTED_DEVICE_ALIAS] or --device bedroom-tv"
-  [[ "$DEVICE" != bedroom-tv || "$VARIANT" == gmsRelease ]] || die "Bedroom TV accepts only gmsRelease"
+  [[ "$DEVICE" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "deploy requires a valid --profile"
 fi
 
 require_command gh
@@ -235,6 +237,9 @@ printf 'VERIFIED: %s channel=%s local=%s upstream=%s\n' "$TAG" "$CHANNEL" "$LOCA
 asset="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(m.assets.find(v=>v.variant===process.argv[2]).signed_asset)' "$MANIFEST" "$VARIANT")"
 APK="$RELEASE_DIR/$asset"
 CANDIDATE_CODE="$($APKANALYZER manifest version-code "$APK")"
+ARCP_PROFILE_VALIDATOR="$SCRIPT_DIR/validate-device-profiles.mjs" arcp_load_profile "$CONFIG_ROOT" "$DEVICE" ||
+  die "Cannot load external device profile"
+[[ "$(arcp_profile_value application_id)" == "$PACKAGE_ID" ]] || die "Profile application ID does not match the release"
 if [[ "$APPLY" == false ]]; then
   printf 'PREVIEW: would install verified %s (%s, versionCode=%s) on %s without clearing data\n' \
     "$TAG" "$VARIANT" "$CANDIDATE_CODE" "$DEVICE"
@@ -242,29 +247,39 @@ if [[ "$APPLY" == false ]]; then
 fi
 
 if command -v adb >/dev/null 2>&1; then ADB=(adb); elif command -v adb.exe >/dev/null 2>&1; then ADB=(adb.exe); else die "adb is unavailable"; fi
-if [[ -z "$SERIAL" && "$DEVICE" == [REDACTED_DEVICE_ALIAS] ]]; then
-  secret_file="$REPO_ROOT/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
-  [[ -r "$secret_file" ]] || die "--serial is required"
-  SERIAL="$(awk -F= '$1=="ADB_SERIAL" {sub(/^[^=]*=/,""); print; count++} END {if(count!=1) exit 2}' "$secret_file")" ||
-    die "Cannot read one ADB_SERIAL assignment"
+if [[ -z "$SERIAL" ]]; then
+  serial_env="$(arcp_profile_value adb_serial_env 2>/dev/null || printf ADB_SERIAL)"
+  SERIAL="${!serial_env:-}"
 fi
-if [[ -z "$SERIAL" && "$DEVICE" == bedroom-tv ]]; then SERIAL="[REDACTED_PRIVATE_ENDPOINT]"; fi
+if [[ -z "$SERIAL" ]]; then
+  secret_file="$(arcp_profile_path secrets)" || die "--serial is required"
+  SERIAL="$(awk -F= -v key="${serial_env:-ADB_SERIAL}" '$1==key || $1=="export " key {sub(/^[^=]*=/,""); print; count++} END {if(count!=1) exit 2}' "$secret_file")" ||
+    die "Cannot read one ADB serial assignment"
+fi
 [[ -n "$SERIAL" && "$SERIAL" != *$'\n'* ]] || die "Invalid ADB serial"
 if [[ "$SERIAL" == *:* ]]; then "${ADB[@]}" connect "$SERIAL" >/dev/null; fi
 [[ "$("${ADB[@]}" -s "$SERIAL" get-state 2>/dev/null)" == device ]] ||
   die "$DEVICE is not an authorized ADB device"
 
-if [[ "$DEVICE" == bedroom-tv ]]; then
-  manufacturer="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.manufacturer | tr -d '\r')"
-  model="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
-  device_name="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
-  sdk="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"
-  abi_list="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.cpu.abilist | tr -d '\r')"
-  [[ "$manufacturer" == Google && "$model" == "[REDACTED_OWNER_VALUE]" && "$device_name" == kirkwood &&
-     "$sdk" == 34 && "$abi_list" == "armeabi-v7a,armeabi" ]] ||
-    die "Bedroom TV identity or 32-bit userspace contract mismatch"
+manufacturer="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.manufacturer | tr -d '\r')"
+model="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
+device_name="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
+sdk="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"
+abi_list="$("${ADB[@]}" -s "$SERIAL" shell getprop ro.product.cpu.abilist | tr -d '\r')"
+[[ "${manufacturer,,}" == "$(arcp_profile_value android_identity.manufacturer | tr '[:upper:]' '[:lower:]')" &&
+   "$model" == "$(arcp_profile_value android_identity.model)" && "$device_name" == "$(arcp_profile_value android_identity.device)" ]] ||
+  die "Target identity does not match the profile"
+min_sdk="$(arcp_profile_value android_identity.min_sdk)"
+max_sdk="$(arcp_profile_value android_identity.max_sdk 2>/dev/null || printf 10000)"
+[[ "$sdk" =~ ^[0-9]+$ && "$sdk" -ge "$min_sdk" && "$sdk" -le "$max_sdk" ]] || die "Target SDK is outside the profile policy"
+node -e '
+  const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")), actual=process.argv[2].split(",");
+  if (!p.android_identity.abi_any_of.some(v=>actual.includes(v))) process.exit(1);
+' "$ARCP_PROFILE_FILE" "$abi_list" || die "Target ABI does not match the profile policy"
+
+if [[ "$(arcp_profile_value deployment_mode)" == first_install ]]; then
   installed_path="$(package_path_or_empty)"
-  [[ -z "$installed_path" ]] || die "Bedroom TV first-install path requires the package to be absent"
+  [[ -z "$installed_path" ]] || die "First-install profile requires the package to be absent"
   FIRST_INSTALL_SERIAL="$SERIAL"
   FIRST_INSTALL_ROLLBACK=true
   "${ADB[@]}" -s "$SERIAL" install "$APK"
@@ -273,31 +288,33 @@ if [[ "$DEVICE" == bedroom-tv ]]; then
   [[ "$new_code" == "$CANDIDATE_CODE" ]] || die "Installed versionCode does not match released APK"
   installed_path="$("${ADB[@]}" -s "$SERIAL" shell pm path "$PACKAGE_ID" |
     sed -n 's/^package://p' | head -1 | tr -d '\r')"
-  [[ "$installed_path" == /*.apk ]] || die "Cannot locate installed Bedroom TV APK"
-  "${ADB[@]}" -s "$SERIAL" pull "$installed_path" "$TEMP_DIR/bedroom-tv-installed.apk" >/dev/null
-  [[ "$(single_signer "$TEMP_DIR/bedroom-tv-installed.apk")" == "$CERTIFICATE" ]] ||
-    die "Installed Bedroom TV signer differs from the immutable release"
+  [[ "$installed_path" == /*.apk ]] || die "Cannot locate installed APK"
+  "${ADB[@]}" -s "$SERIAL" pull "$installed_path" "$TEMP_DIR/installed.apk" >/dev/null
+  [[ "$(single_signer "$TEMP_DIR/installed.apk")" == "$CERTIFICATE" ]] ||
+    die "Installed signer differs from the immutable release"
   primary_abi="$("${ADB[@]}" -s "$SERIAL" shell dumpsys package "$PACKAGE_ID" |
     sed -n -E 's/.*primaryCpuAbi=([^[:space:]]+).*/\1/p' | head -1 | tr -d '\r')"
-  [[ "$primary_abi" == armeabi-v7a ]] || die "Bedroom TV did not select armeabi-v7a"
-  evidence="$REPO_ROOT/build/device-deployments/bedroom-tv/$(date -u +%Y%m%dT%H%M%SZ).json"
+  if [[ "$(arcp_profile_value capabilities.require_32bit)" == true ]]; then
+    [[ "$primary_abi" == armeabi-v7a ]] || die "Target did not select the required 32-bit ABI"
+  fi
+  evidence="$REPO_ROOT/build/device-deployments/$DEVICE/$(date -u +%Y%m%dT%H%M%SZ).json"
   mkdir -p "$(dirname "$evidence")"
   node -e '
-    const fs=require("fs"); const [out,tag,serial,code,cert]=process.argv.slice(1);
-    fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"verified_first_install",device:"bedroom-tv",
+    const fs=require("fs"); const [out,tag,serial,code,cert,profile,abi]=process.argv.slice(1);
+    fs.writeFileSync(out,JSON.stringify({schema_version:1,type:"verified_first_install",profile,
       adb_serial:serial,package_pre_state:"absent",package_id:"com.danielealbano.androidremotecontrolmcp",
-      release_tag:tag,version_code:Number(code),certificate_sha256:cert,primary_cpu_abi:"armeabi-v7a",
+      release_tag:tag,version_code:Number(code),certificate_sha256:cert,primary_cpu_abi:abi,
       installed_at:new Date().toISOString()},null,2)+"\n");
-  ' "$evidence" "$TAG" "$SERIAL" "$CANDIDATE_CODE" "$CERTIFICATE"
+  ' "$evidence" "$TAG" "$SERIAL" "$CANDIDATE_CODE" "$CERTIFICATE" "$DEVICE" "$primary_abi"
   FIRST_INSTALL_ROLLBACK=false
-  printf 'INSTALLED: %s on Bedroom TV; verified first-install evidence: %s\n' "$TAG" "$evidence"
+  printf 'INSTALLED: %s on %s; verified first-install evidence: %s\n' "$TAG" "$DEVICE" "$evidence"
   exit 0
 fi
 
 installed_code="$("${ADB[@]}" -s "$SERIAL" shell dumpsys package "$PACKAGE_ID" | sed -n -E 's/.*versionCode=([0-9]+).*/\1/p' | head -1 | tr -d '\r')"
-[[ "$installed_code" =~ ^[0-9]+$ ]] || die "Cannot read installed [REDACTED_DEVICE_ALIAS] versionCode"
+[[ "$installed_code" =~ ^[0-9]+$ ]] || die "Cannot read installed versionCode"
 (( CANDIDATE_CODE > installed_code )) || die "Candidate versionCode must be greater than installed versionCode"
-backup="$REPO_ROOT/build/device-backups/[REDACTED_DEVICE_ALIAS]/$(date -u +%Y%m%dT%H%M%SZ)"
+backup="$REPO_ROOT/build/device-backups/$DEVICE/$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$backup"
 installed_path="$("${ADB[@]}" -s "$SERIAL" shell pm path "$PACKAGE_ID" | sed -n 's/^package://p' | head -1 | tr -d '\r')"
 [[ "$installed_path" == /*.apk ]] || die "Cannot locate installed base APK"
@@ -307,4 +324,4 @@ printf '{"package_id":"%s","version_code":%s,"candidate_tag":"%s"}\n' \
 "${ADB[@]}" -s "$SERIAL" install -r "$APK"
 new_code="$("${ADB[@]}" -s "$SERIAL" shell dumpsys package "$PACKAGE_ID" | sed -n -E 's/.*versionCode=([0-9]+).*/\1/p' | head -1 | tr -d '\r')"
 [[ "$new_code" == "$CANDIDATE_CODE" ]] || die "Installed versionCode does not match released APK"
-printf 'INSTALLED: %s on [REDACTED_DEVICE_ALIAS]; data retained; rollback evidence: %s\n' "$TAG" "$backup"
+printf 'INSTALLED: %s on %s; data retained; rollback evidence: %s\n' "$TAG" "$DEVICE" "$backup"

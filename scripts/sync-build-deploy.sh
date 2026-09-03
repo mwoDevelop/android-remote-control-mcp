@@ -7,6 +7,7 @@ unset [REDACTED_DEVICE_ALIAS]_PIN [REDACTED_DEVICE_ALIAS]_PIN
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${ARCP_REPO_ROOT_OVERRIDE:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)}"
+source "$SCRIPT_DIR/lib/arcp-config-root.sh"
 PACKAGE_ID="com.danielealbano.androidremotecontrolmcp"
 OFFICIAL_UPSTREAM="https://github.com/danielealbano/android-remote-control-mcp.git"
 OWNER_REPOSITORY="https://github.com/mwoDevelop/android-remote-control-mcp.git"
@@ -17,6 +18,7 @@ BOOTSTRAP_MAVEN_VERSION="3.9.11"
 BOOTSTRAP_MAVEN_IMAGE="maven@sha256:922927df2c662cdd47ddb116443d6bec4696cfae3de1a0ddac8fcc7b87ce61ae"
 APPLY=false
 DEVICE=""
+CONFIG_ROOT=""
 SERIAL=""
 VARIANT="$DEFAULT_VARIANT"
 ARTIFACT=""
@@ -38,7 +40,7 @@ shift || true
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/sync-build-deploy.sh check  --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> [--serial <adb-serial>]
+  scripts/sync-build-deploy.sh check  --profile <name> [--config-root <absolute-directory>] [--serial <adb-serial>]
   scripts/sync-build-deploy.sh sync   [--upstream-ref upstream/main]
                                       [--cloudflared-ref <tag-or-origin/ref>]
                                       [--ngrok-ref <origin/ref>] --apply
@@ -49,9 +51,9 @@ Usage:
                                       [--unsigned-release] [--skip-e2e-compile]
   scripts/sync-build-deploy.sh channel-info (--latest-stable|--latest-edge)
                                       [--expected-source-sha <sha>]
-  scripts/sync-build-deploy.sh deploy --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <apk> [--serial <adb-serial>] --apply
-  scripts/sync-build-deploy.sh all    --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> [--variant ...] [--serial <adb-serial>] --apply
-  scripts/sync-build-deploy.sh rollback --device <[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]> --artifact <known-good-apk> [--serial <adb-serial>] --apply
+  scripts/sync-build-deploy.sh deploy --profile <name> --artifact <apk> [--config-root <absolute-directory>] [--serial <adb-serial>] --apply
+  scripts/sync-build-deploy.sh all    --profile <name> [--config-root <absolute-directory>] [--variant ...] [--serial <adb-serial>] --apply
+  scripts/sync-build-deploy.sh rollback --profile <name> --artifact <known-good-apk> [--config-root <absolute-directory>] [--serial <adb-serial>] --apply
 
 Safety contract:
   check is read-only. sync fetches upstream and creates a review branch only when new commits exist;
@@ -64,17 +66,18 @@ Safety contract:
   mirror qualification profile and emits a portable pre-sign manifest for trusted post-build signing.
   sync/deploy/all/rollback print a preview and make no changes without literal --apply.
   Deployment never uninstalls an app, bypasses signature checks, grants Restricted Settings,
-  automates Shizuku, or changes Qustodio. The historical debug proof uses scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh.
+  automates privileged services, or changes parental-control policy. --device remains a deprecated alias
+  for --profile during one migration cycle; no device mapping is stored in this repository.
 
 Examples:
-  scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial SERIAL
+  scripts/sync-build-deploy.sh check --profile phone --config-root /absolute/private/devices --serial SERIAL
   scripts/sync-build-deploy.sh sync --upstream-ref upstream/main --apply
   scripts/sync-build-deploy.sh sync --cloudflared-ref 2026.8.2 --apply
   scripts/sync-build-deploy.sh build --variant gmsDebug
   scripts/sync-build-deploy.sh build --latest-stable --variant gmsDebug
   scripts/sync-build-deploy.sh build --latest-edge --variant gmsRelease --unsigned-release
   scripts/sync-build-deploy.sh channel-info --latest-edge --expected-source-sha 0123456789abcdef0123456789abcdef01234567
-  scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial SERIAL --apply
+  scripts/sync-build-deploy.sh all --profile phone --config-root /absolute/private/devices --variant gmsRelease --serial SERIAL --apply
 EOF
 }
 
@@ -90,7 +93,8 @@ require_command() {
 parse_args() {
   while (($#)); do
     case "$1" in
-      --device) (($# >= 2)) || die "--device requires a value"; DEVICE="$2"; shift 2 ;;
+      --profile|--device) (($# >= 2)) || die "$1 requires a value"; DEVICE="$2"; shift 2 ;;
+      --config-root) (($# >= 2)) || die "--config-root requires a value"; CONFIG_ROOT="$2"; shift 2 ;;
       --serial) (($# >= 2)) || die "--serial requires a value"; SERIAL="$2"; shift 2 ;;
       --variant) (($# >= 2)) || die "--variant requires a value"; VARIANT="$2"; shift 2 ;;
       --artifact) (($# >= 2)) || die "--artifact requires a value"; ARTIFACT="$2"; shift 2 ;;
@@ -148,7 +152,7 @@ validate_contract() {
         die "check received an option that belongs to another command"
       ;;
     sync)
-      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
+      [[ -z "$DEVICE" && -z "$CONFIG_ROOT" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
          "$LATEST_STABLE" == false && "$LATEST_EDGE" == false && "$UNSIGNED_RELEASE" == false &&
          -z "$EXPECTED_SOURCE_SHA" && -z "$EXPECTED_LOCAL_SHA" && -z "$VERSION_CODE_OVERRIDE" &&
          -z "$VERSION_NAME_OVERRIDE" && "$SKIP_E2E" == false ]] ||
@@ -159,7 +163,7 @@ validate_contract() {
         die "--ngrok-ref must name a ref below the maintained origin/ fork"
       ;;
     build)
-      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
+      [[ -z "$DEVICE" && -z "$CONFIG_ROOT" && -z "$SERIAL" && -z "$ARTIFACT" && "$UPSTREAM_REF" == "upstream/main" &&
          -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" && "$APPLY" == false ]] ||
         die "build accepts only --variant, channel build options and --skip-e2e-compile"
       if [[ "$UNSIGNED_RELEASE" == true ]]; then
@@ -173,7 +177,7 @@ validate_contract() {
       fi
       ;;
     channel-info)
-      [[ -z "$DEVICE" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
+      [[ -z "$DEVICE" && -z "$CONFIG_ROOT" && -z "$SERIAL" && -z "$ARTIFACT" && "$VARIANT" == "$DEFAULT_VARIANT" &&
          "$UPSTREAM_REF" == "upstream/main" && -z "$CLOUDFLARED_REF" && -z "$NGROK_REF" &&
          "$APPLY" == false && "$UNSIGNED_RELEASE" == false && "$SKIP_E2E" == false &&
          -z "$VERSION_CODE_OVERRIDE" && -z "$VERSION_NAME_OVERRIDE" ]] ||
@@ -201,16 +205,25 @@ validate_contract() {
     *) die "Unknown command: $COMMAND" ;;
   esac
 
-  case "$DEVICE" in ""|[REDACTED_DEVICE_ALIAS]|[REDACTED_DEVICE_ALIAS]) ;; *) die "Unknown device: $DEVICE" ;; esac
+  [[ -z "$DEVICE" || "$DEVICE" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "Invalid profile name"
   case "$VARIANT" in gmsDebug|fossDebug|gmsRelease|fossRelease) ;; *) die "Unknown variant: $VARIANT" ;; esac
 }
 
 device_config() {
-  printf '%s/myconf/%s/android/config.json' "$REPO_ROOT" "$DEVICE"
+  ensure_profile
+  arcp_profile_path android_config
 }
 
 device_secret_file() {
-  printf '%s/myconf/%s/.env.secrets' "$REPO_ROOT" "$DEVICE"
+  ensure_profile
+  arcp_profile_path secrets
+}
+
+ensure_profile() {
+  if [[ -z "${ARCP_PROFILE_ROOT:-}" ]]; then
+    ARCP_PROFILE_VALIDATOR="$SCRIPT_DIR/validate-device-profiles.mjs" arcp_load_profile "$CONFIG_ROOT" "$DEVICE" ||
+      die "Cannot load external device profile"
+  fi
 }
 
 json_value() {
@@ -259,27 +272,20 @@ read_secret_variable() {
 }
 
 resolve_ngrok_test_token() {
-  local token="${NGROK_AUTHTOKEN:-}" secret_file
-  if [[ -n "$token" ]]; then
-    printf '%s' "$token"
-    return
-  fi
-  secret_file="$REPO_ROOT/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
-  [[ -r "$secret_file" ]] ||
-    die "NGROK_AUTHTOKEN is unset and the [REDACTED_DEVICE_ALIAS] secrets file is unavailable"
-  token="$(read_secret_variable "$secret_file" NGROK_AUTHTOKEN)" ||
-    die "Invalid or duplicate NGROK_AUTHTOKEN assignment in the [REDACTED_DEVICE_ALIAS] secrets file"
-  [[ -n "$token" ]] ||
-    die "NGROK_AUTHTOKEN is empty; the mandatory ngrok integration test cannot run"
+  local token="${NGROK_AUTHTOKEN:-}"
+  [[ -n "$token" ]] || die "NGROK_AUTHTOKEN is unset; ordinary live integration tests require it explicitly"
   printf '%s' "$token"
 }
 
 validate_secret_file() {
-  local file
+  local file relative
   file="$(device_secret_file)"
-  [[ -f "$file" ]] || die "Missing device secrets file: myconf/$DEVICE/.env.secrets"
+  [[ -f "$file" && ! -L "$file" ]] || die "Missing regular device secrets file"
   [[ "$(stat -c '%a' "$file")" == "600" ]] || die "Device secrets file must have mode 0600"
-  git -C "$REPO_ROOT" check-ignore -q "myconf/$DEVICE/.env.secrets" || die "Device secrets file is not ignored by Git"
+  if [[ "$file" == "$REPO_ROOT/"* ]]; then
+    relative="${file#"$REPO_ROOT/"}"
+    ! git -C "$REPO_ROOT" ls-files --error-unmatch -- "$relative" >/dev/null 2>&1 || die "Device secrets file is tracked by the public repository"
+  fi
   [[ -n "$(read_secret_variable "$file" ANDROID_MCP_BEARER_TOKEN)" ]] || die "ANDROID_MCP_BEARER_TOKEN is empty"
   [[ -n "$(read_secret_variable "$file" CLOUDFLARE_TUNNEL_TOKEN)" ]] || die "CLOUDFLARE_TUNNEL_TOKEN is empty"
 }
@@ -306,9 +312,10 @@ verify_device_identity() {
   local config expected_manufacturer expected_model expected_device actual_manufacturer actual_model actual_device
   config="$(device_config)"
   [[ -r "$config" ]] || die "Missing device config: $config"
-  expected_manufacturer="$(json_value "$config" device.deployment_identity.manufacturer)"
-  expected_model="$(json_value "$config" device.deployment_identity.model)"
-  expected_device="$(json_value "$config" device.deployment_identity.device)"
+  ensure_profile
+  expected_manufacturer="$(arcp_profile_value android_identity.manufacturer)"
+  expected_model="$(arcp_profile_value android_identity.model)"
+  expected_device="$(arcp_profile_value android_identity.device)"
   adb_target get-state >/dev/null
   actual_manufacturer="$(adb_target shell getprop ro.product.manufacturer | tr -d '\r')"
   actual_model="$(adb_target shell getprop ro.product.model | tr -d '\r')"
@@ -851,9 +858,6 @@ build_variant() {
   require_command node
   variant_parts
   cd "$REPO_ROOT"
-  if [[ "${ARCP_FORK_CHANNEL_BUILD:-false}" != true ]]; then
-    scripts/verify-device-configs.sh
-  fi
   prepare_go_toolchain
   prepare_maven_toolchain
   prepare_host_cloudflared
@@ -926,7 +930,8 @@ preflight_artifact_and_device() {
   check_device
   metadata="$(apk_metadata "$ARTIFACT")" || die "Cannot read candidate APK metadata"
   IFS=$'\t' read -r candidate_package candidate_code _ candidate_cert <<<"$metadata"
-  expected_package="$(json_value "$(device_config)" application.package_id)"
+  ensure_profile
+  expected_package="$(arcp_profile_value application_id)"
   [[ "$candidate_package" == "$expected_package" ]] || die "APK application ID mismatch (debug POC uses a separate helper)"
   signer="$(resolve_android_tool apksigner)"
   if installed_cert="$(installed_certificate "$expected_package" "$signer")"; then
@@ -976,6 +981,7 @@ write_deployment_manifest() {
 }
 
 deploy_artifact() {
+  ensure_profile
   if [[ "$APPLY" == false ]]; then
     printf 'PREVIEW: validate qualified artifact, explicit %s identity, installed/candidate signatures, install -r, restore config, and run live checks.\n' "$DEVICE"
     return
@@ -985,16 +991,17 @@ deploy_artifact() {
   require_command timeout
   preflight_artifact_and_device
   local expected_package apply_script verify_script manifest
-  expected_package="$(json_value "$(device_config)" application.package_id)"
+  ensure_profile
+  expected_package="$(arcp_profile_value application_id)"
   if [[ "$COMMAND" == "rollback" ]]; then
     adb_target install -r -d "$ARTIFACT"
   else
     adb_target install -r "$ARTIFACT"
   fi
   [[ "$(adb_target shell pm path "$expected_package" | tr -d '\r')" == package:* ]] || die "Package not installed after adb install -r"
-  apply_script="$REPO_ROOT/myconf/$DEVICE/android/apply-config.sh"
-  verify_script="$REPO_ROOT/myconf/$DEVICE/scripts/verify.sh"
-  env -u [REDACTED_DEVICE_ALIAS]_PIN ADB_SERIAL="$SERIAL" "$apply_script" --restart
+  apply_script="$(arcp_profile_path apply)"
+  verify_script="$(arcp_profile_path verify)"
+  env -u [REDACTED_DEVICE_ALIAS]_PIN -u [REDACTED_DEVICE_ALIAS]_PIN ADB_SERIAL="$SERIAL" "$apply_script" --restart
   verify_loopback_binding
   "$verify_script" --live
   manifest="$(write_deployment_manifest PENDING_MANUAL_GATES)"
@@ -1030,6 +1037,7 @@ case "$COMMAND" in
   channel-info) channel_info ;;
   deploy) deploy_artifact ;;
   all)
+    ensure_profile
     if [[ "$APPLY" == false ]]; then
       printf 'PREVIEW: validate and build the current reviewed commit, then deploy to %s; no fetch or merge.\n' "$DEVICE"
     else
