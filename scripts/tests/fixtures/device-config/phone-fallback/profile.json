@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "name": "phone-fallback",
+  "application_id": "com.example.arcp",
+  "deployment_mode": "upgrade",
+  "android_identity": { "manufacturer": "Example", "model": "Fallback Phone", "device": "fallback-phone", "min_sdk": 26, "abi_any_of": ["arm64-v8a"] },
+  "capabilities": { "fallback_tunnel": true, "pin_provisioning": true, "first_install": false, "require_32bit": false },
+  "paths": { "android_config": "android/config.json", "apply": "android/apply-config.sh", "verify": "scripts/verify.sh", "secrets": ".env.secrets" }
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "phone",
+  "application_id": "com.example.arcp",
+  "deployment_mode": "upgrade",
+  "adb_serial_env": "ADB_SERIAL",
+  "android_identity": { "manufacturer": "Example", "model": "Phone", "device": "phone", "min_sdk": 26, "abi_any_of": ["arm64-v8a"] },
+  "capabilities": { "fallback_tunnel": false, "pin_provisioning": true, "first_install": false, "require_32bit": false },
+  "paths": { "android_config": "android/config.json", "apply": "android/apply-config.sh", "verify": "scripts/verify.sh", "secrets": ".env.secrets" }
+}

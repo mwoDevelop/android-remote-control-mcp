@@ -119,8 +119,10 @@ sign_bundle() {
 }
 
 test_workflow_contract() {
-  local workflow="$REPO_ROOT/.github/workflows/arcp-channel-release.yml"
+  local workflow="$REPO_ROOT/.github/workflows/arcp-channel-release.yml" resolve preview reserve sign publish
+  local legacy_workflow="$REPO_ROOT/.github/workflows/edge-release.yml"
   [[ -f "$workflow" ]]
+  [[ -f "$legacy_workflow" ]]
   ! grep -Eq '^  schedule:' "$workflow"
   grep -Fq 'group: arcp-channel-publication' "$workflow"
   grep -Fq 'environment: arcp-live-tests' "$workflow"
@@ -128,8 +130,30 @@ test_workflow_contract() {
   grep -Fq 'scripts/arcp-version-ledger.sh' "$workflow"
   grep -Fq 'scripts/sign-arcp-channel-release.sh' "$workflow"
   grep -Fq 'scripts/publish-arcp-channel-release.sh' "$workflow"
+  grep -Fq './gradlew :app:testGmsDebugUnitTest --tests' "$workflow"
+  grep -Fq 'request_id:' "$workflow"
+  grep -Fq 'expected_source_sha:' "$workflow"
+  grep -Fq 'expected_local_sha:' "$workflow"
+  grep -Fq -- '--expected-source-sha' "$workflow"
+  grep -Fq -- '--expected-local-sha' "$workflow"
+  grep -Fq 'request_id must be 8-80 allowlisted ASCII characters' "$workflow"
+  grep -Fq 'dry_run_validated' "$workflow"
+  grep -Fq 'existing_verified_noop' "$workflow"
+  grep -Fq 'Publication was requested but ENABLE_ARCP_RELEASE_PUBLISHING is not true' "$workflow"
+  resolve="$(sed -n '/^  resolve:/,/^  preview-version:/p' "$workflow")"
+  preview="$(sed -n '/^  preview-version:/,/^  reserve-version:/p' "$workflow")"
+  reserve="$(sed -n '/^  reserve-version:/,/^  build:/p' "$workflow")"
+  sign="$(sed -n '/^  sign:/,/^  publish:/p' "$workflow")"
+  publish="$(sed -n '/^  publish:/,$p' "$workflow")"
+  [[ "$resolve" == *'contents: read'* && "$resolve" != *'contents: write'* ]]
+  [[ "$preview" == *'contents: read'* && "$preview" != *'contents: write'* ]]
+  [[ "$reserve" == *'if: ${{ inputs.publish }}'* && "$reserve" == *'contents: write'* ]]
+  [[ "$sign" == *'contents: read'* && "$sign" != *'contents: write'* ]]
+  [[ "$publish" == *'if: ${{ inputs.publish }}'* && "$publish" == *'contents: write'* ]]
   ! grep -Fq 'sign-upstream-channel-release.sh' "$workflow"
-  pass 'workflow separates static, live and signing trust boundaries'
+  grep -Eq '^  workflow_dispatch:' "$legacy_workflow"
+  ! grep -Eq '^  (push|schedule):' "$legacy_workflow"
+  pass 'workflow pins caller sources and separates dry-run from write-capable publication'
 }
 
 test_artifact_json_loading_contract() {
@@ -137,24 +161,24 @@ test_artifact_json_loading_contract() {
   [[ -f "$artifact_script" ]]
   ! grep -Eq 'require\(process\.argv\[[12]\]\)' "$artifact_script"
   grep -Fq 'JSON.parse(fs.readFileSync(process.argv[1],"utf8"))' "$artifact_script"
-  grep -Fq 'bedroom-tv' "$artifact_script"
+  grep -Fq 'deployment_mode)" == first_install' "$artifact_script"
   grep -Fq 'package_pre_state:"absent"' "$artifact_script"
   grep -Fq 'FIRST_INSTALL_ROLLBACK=true' "$artifact_script"
   pass 'release verification parses JSON content independently of filename extension'
 }
 
-test_bedroom_tv_absent_package_probe() {
+test_first_install_absent_package_probe() {
   local artifact_script="$REPO_ROOT/scripts/arcp-release-artifact.sh" output
   eval "$(sed -n '/^package_path_or_empty() {/,/^}/p' "$artifact_script")"
 
   fake_adb() { return 1; }
   ADB=(fake_adb)
-  SERIAL=bedroom-tv-test
+  SERIAL=first-install-test
   PACKAGE_ID=com.example.absent
 
   output="$(package_path_or_empty)"
   [[ -z "$output" ]]
-  pass 'Bedroom TV first-install treats an absent package as the expected empty pre-state'
+  pass 'generic first-install treats an absent package as the expected empty pre-state'
 }
 
 test_sign_and_dry_run() {
@@ -169,6 +193,16 @@ test_sign_and_dry_run() {
   [[ "$dry" == *'DRY RUN: would publish immutable ARCP release'* ]]
   [[ "$dry" == *"local=release/edge/$LOCAL_SHA"* ]]
   pass 'dual-source bundle signs and dry-run is non-mutating'
+}
+
+test_relative_signing_paths() {
+  make_inputs "$WORK_ROOT/relative-input"
+  (
+    cd "$WORK_ROOT"
+    sign_bundle relative-input relative-output >/dev/null
+  )
+  [[ -f "$WORK_ROOT/relative-output/release-manifest.json" ]]
+  pass 'signing accepts workflow-style relative artifact paths without Node module resolution'
 }
 
 test_failures() {
@@ -215,8 +249,10 @@ make_fake_tools
 touch "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 chmod 600 "$WORK_ROOT/release.jks" "$WORK_ROOT/store-password" "$WORK_ROOT/key-password"
 test_workflow_contract
-test_bedroom_tv_absent_package_probe
+test_artifact_json_loading_contract
+test_first_install_absent_package_probe
 test_sign_and_dry_run
+test_relative_signing_paths
 test_failures
 test_apply_create
 printf '1..%d\n' "$PASSED"

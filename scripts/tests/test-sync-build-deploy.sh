@@ -4,6 +4,7 @@ set -euo pipefail
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_SCRIPT="$(cd -- "$TEST_DIR/.." && pwd)/sync-build-deploy.sh"
 SOURCE_REPO_ROOT="$(cd -- "$TEST_DIR/../.." && pwd)"
+SOURCE_SCRIPTS="$(cd -- "$TEST_DIR/.." && pwd)"
 PASSED=0
 WORK_ROOT="$(mktemp -d)"
 
@@ -18,10 +19,14 @@ new_repo() {
   git -C "$repo" init -q -b main
   git -C "$repo" config user.email test@example.invalid
   git -C "$repo" config user.name Test
-  mkdir -p "$repo/scripts" "$repo/myconf/[REDACTED_DEVICE_ALIAS]"
+  mkdir -p "$repo/scripts/lib" "$repo/config/[REDACTED_DEVICE_ALIAS]"
   cp "$SOURCE_SCRIPT" "$repo/scripts/sync-build-deploy.sh"
-  chmod +x "$repo/scripts/sync-build-deploy.sh"
-  printf '.env.secrets\n' >"$repo/.gitignore"
+  cp "$SOURCE_SCRIPTS/lib/arcp-config-root.sh" "$repo/scripts/lib/"
+  cp "$SOURCE_SCRIPTS/validate-device-profiles.mjs" "$repo/scripts/"
+  cp -a "$TEST_DIR/fixtures/device-config/phone/." "$repo/config/[REDACTED_DEVICE_ALIAS]/"
+  node -e 'const fs=require("fs"),p=process.argv[1],v=JSON.parse(fs.readFileSync(p));v.name="[REDACTED_DEVICE_ALIAS]";v.application_id="com.danielealbano.androidremotecontrolmcp";fs.writeFileSync(p,JSON.stringify(v)+"\n")' "$repo/config/[REDACTED_DEVICE_ALIAS]/profile.json"
+  chmod +x "$repo/scripts/sync-build-deploy.sh" "$repo/scripts/validate-device-profiles.mjs"
+  printf '**/.env.secrets\n' >"$repo/.gitignore"
   printf 'seed\n' >"$repo/README.md"
   git -C "$repo" add .
   git -C "$repo" commit -q -m seed
@@ -360,7 +365,7 @@ test_vendor_fast_forward_detection() {
 test_deploy_preview() {
   local repo output
   repo="$(new_repo)"
-  output="$(cd "$repo" && scripts/sync-build-deploy.sh deploy --device [REDACTED_DEVICE_ALIAS] --artifact /does/not/exist.apk)"
+  output="$(cd "$repo" && scripts/sync-build-deploy.sh deploy --profile [REDACTED_DEVICE_ALIAS] --config-root "$repo/config" --artifact /does/not/exist.apk)"
   [[ "$output" == *"PREVIEW:"* ]]
   [[ "$output" == *"signatures"* ]]
   pass "deploy without apply does not require or mutate an artifact/device"
@@ -369,7 +374,7 @@ test_deploy_preview() {
 test_all_preview_has_no_sync() {
   local repo output
   repo="$(new_repo)"
-  output="$(cd "$repo" && scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease)"
+  output="$(cd "$repo" && scripts/sync-build-deploy.sh all --profile [REDACTED_DEVICE_ALIAS] --config-root "$repo/config" --variant gmsRelease)"
   [[ "$output" == *"no fetch or merge"* ]]
   [[ "$(git -C "$repo" branch --show-current)" == "main" ]]
   pass "all preview explicitly excludes fetch and merge"
@@ -392,18 +397,18 @@ fi
 exit 99
 EOF
   chmod +x "$fake_bin/adb"
-  secret="$repo/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
+  secret="$repo/config/[REDACTED_DEVICE_ALIAS]/.env.secrets"
   printf 'ANDROID_MCP_BEARER_TOKEN=test\nCLOUDFLARE_TUNNEL_TOKEN=test\nADB_SERIAL=\nexport [REDACTED_DEVICE_ALIAS]_PIN=987654\n' >"$secret"
   chmod 600 "$secret"
   expect_failure "ambiguous ADB selection is rejected" "ADB serial is required because 2" \
     env [REDACTED_DEVICE_ALIAS]_PIN=123456 [REDACTED_DEVICE_ALIAS]_PIN=654321 \
-      bash -c "cd '$repo' && PATH='$fake_bin':\"\$PATH\" scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS]"
+      bash -c "cd '$repo' && PATH='$fake_bin':\"\$PATH\" scripts/sync-build-deploy.sh check --profile [REDACTED_DEVICE_ALIAS] --config-root '$repo/config'"
 }
 
 test_secret_reader_does_not_execute_or_export_pin() {
   local repo secret value marker
   repo="$(new_repo)"
-  secret="$repo/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
+  secret="$repo/config/[REDACTED_DEVICE_ALIAS]/.env.secrets"
   marker="$repo/executed"
   printf 'ANDROID_MCP_BEARER_TOKEN=admin-token\nCLOUDFLARE_TUNNEL_TOKEN=tunnel-token\nexport [REDACTED_DEVICE_ALIAS]_PIN=$(touch %s)\n' "$marker" >"$secret"
   chmod 600 "$secret"
@@ -420,25 +425,22 @@ test_secret_reader_does_not_execute_or_export_pin() {
 }
 
 test_ngrok_test_token_resolution() {
-  local repo secret value
+  local value output status
   repo="$(new_repo)"
-  mkdir -p "$repo/myconf/[REDACTED_DEVICE_ALIAS]"
-  secret="$repo/myconf/[REDACTED_DEVICE_ALIAS]/.env.secrets"
-  printf 'NGROK_AUTHTOKEN=file-token\n' >"$secret"
-  chmod 600 "$secret"
   (
-    eval "$(sed -n '/^read_secret_variable() {/,/^}/p' "$SOURCE_SCRIPT")"
     eval "$(sed -n '/^resolve_ngrok_test_token() {/,/^}/p' "$SOURCE_SCRIPT")"
     die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-    REPO_ROOT="$repo"
     unset NGROK_AUTHTOKEN
-    value="$(resolve_ngrok_test_token)"
-    [[ "$value" == "file-token" ]]
+    set +e
+    output="$(resolve_ngrok_test_token 2>&1)"
+    status=$?
+    set -e
+    [[ $status -ne 0 && "$output" == *'require it explicitly'* ]]
     NGROK_AUTHTOKEN="environment-token"
     value="$(resolve_ngrok_test_token)"
     [[ "$value" == "environment-token" ]]
   )
-  pass "build resolves the ngrok integration credential without sourcing unrelated secrets"
+  pass "build accepts only an explicitly supplied ngrok integration credential"
 }
 
 test_production_listener_safety() {
