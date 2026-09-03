@@ -13,7 +13,7 @@ side-by-side installations. Stable has a Ktor 3.4/MCP SDK 0.8 adapter; edge has 
 Common privileged implementations remain in owner packages and the `shizuku-admin` module.
 
 Historical `upstream-v*` and `upstream-edge` releases are retained only as audit evidence. They omit local features
-and must not be installed on [REDACTED_DEVICE_ALIAS] or [REDACTED_DEVICE_ALIAS].
+and must not be used as fork releases.
 
 The mutable legacy `edge` publisher and inherited `v*` draft publisher remain in Git for audit and upstream
 mergeability, but both are disabled in the owner repository. New device releases must use the immutable `arcp-*`
@@ -85,21 +85,23 @@ For CI/recovery troubleshooting only, the underlying interfaces remain
 `sync-build-deploy.sh`, `arcp-version-ledger.sh`, `sign-arcp-channel-release.sh`, and
 `publish-arcp-channel-release.sh`; routine users should not compose them manually.
 
-## Released APK verification and [REDACTED_DEVICE_ALIAS] promotion
+## Released APK verification and profile-based promotion
 
 Deployment uses a freshly downloaded immutable release, never the local build output:
 
 ```bash
 release_dir="$(mktemp -d /tmp/arcp-release.XXXXXX)"
 scripts/arcp-release-artifact.sh download --tag <immutable-tag> --dir "$release_dir"
-scripts/arcp-release-artifact.sh deploy --tag <immutable-tag> --dir "$release_dir" --device [REDACTED_DEVICE_ALIAS]
-scripts/arcp-release-artifact.sh deploy --tag <immutable-tag> --dir "$release_dir" --device [REDACTED_DEVICE_ALIAS] --apply
+scripts/arcp-release-artifact.sh deploy --tag <immutable-tag> --dir "$release_dir" \
+  --profile phone --config-root /absolute/private/devices
+scripts/arcp-release-artifact.sh deploy --tag <immutable-tag> --dir "$release_dir" \
+  --profile phone --config-root /absolute/private/devices --apply
 ```
 
 The verifier enforces the exact regular-file allowlist, remote tag target/classification, release ledger binding,
 dual source and submodule SHAs, feature contract, hashes, one owner signer, package/version metadata and both native
 tunnel payloads. Deployment additionally refuses a versionCode downgrade, retains application data, and stores the
-previous installed base APK under ignored `build/device-backups/[REDACTED_DEVICE_ALIAS]/` before update.
+previous installed base APK under an ignored profile-scoped backup directory before update.
 
-The complete reviewed design, accepted independent-review findings and rollout evidence are in
-[Plan 73](plans/73_local_fork_stable_edge_releases_20260901.md).
+The public workflow and its executable contract tests are the authoritative release specification. Operational
+rollout evidence belongs in the external private configuration repository.

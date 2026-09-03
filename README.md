@@ -20,7 +20,7 @@ The app runs directly on your Android device (or emulator) and exposes an HTTP s
 - [Setup](#setup)
 - [Privacy Mode](#privacy-mode)
 - [Integrations](#integrations)
-- [Managed Device Configurations](#managed-device-configurations)
+- [External Device Configurations](#external-device-configurations)
 - [Configuration](#configuration)
 - [Permissions Reference](#permissions-reference)
 - [Security](#security)
@@ -172,7 +172,7 @@ with `./scripts/arcp github configure --apply` and `./scripts/arcp github status
 as repository metadata and are not owner release entrypoints.
 
 See [ARCP stable and edge releases](docs/ARCP_CHANNEL_RELEASES.md) for source topology, version ledger, protected
-workflow, released-APK verification and [REDACTED_DEVICE_ALIAS] promotion.
+workflow and profile-based released-APK verification.
 
 ---
 
@@ -364,45 +364,39 @@ The bearer token is shown in the app's connection info and can be copied directl
 
 ---
 
-## Managed Device Configurations
+## External device configurations
 
-This fork keeps reproducible, owner-specific deployment snapshots under `myconf/`. Both devices use the same directory contract and keep active credentials in a local `.env.secrets` file that is ignored by Git.
+Owner-specific device and infrastructure configuration belongs in a separate private repository. This public fork
+contains only the schema, resolver and synthetic examples under
+[`scripts/tests/fixtures/device-config`](scripts/tests/fixtures/device-config). It has no real device inventory,
+endpoint table, provider snapshot or repository-local fallback.
 
-| Device | Primary MCP endpoint | Remote-access policy | Captured provisioning state |
-|---|---|---|---|
-| [Xiaomi 11T Pro (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare primary, ngrok fallback | Operational; private ChatGPT plugin refreshed (62 tools), sleep/unlock E2E passed twice |
-| [Samsung Galaxy A34 5G (`[REDACTED_DEVICE_ALIAS]`)](myconf/[REDACTED_DEVICE_ALIAS]/README.md) | `[REDACTED_OWNER_VALUE]` | Cloudflare only | Operational; private ChatGPT plugin refreshed (62 tools) |
-
-Each device directory contains the same common configuration areas:
-
-```text
-myconf/<device>/
-├── README.md
-├── snapshot.json
-├── .env.example
-├── .env.secrets              # local, mode 0600, ignored by Git
-├── android/
-│   ├── config.json
-│   └── apply-config.sh
-├── cloudflare/               # Terraform plus a live snapshot
-├── chatgpt/connectors.json
-├── regery/domain.json
-└── scripts/verify.sh
-```
-
-`myconf/[REDACTED_DEVICE_ALIAS]/ngrok/` is an intentional optional extension. [REDACTED_DEVICE_ALIAS] is explicitly Cloudflare-only and must not contain ngrok configuration or a ChatGPT fallback connector.
-
-Validate both directories and their shared schema with:
+Point a device operation at the private `devices/` directory using an explicit absolute path (highest precedence) or
+an environment variable:
 
 ```bash
-./scripts/verify-device-configs.sh
+export ARCP_CONFIG_ROOT=/absolute/path/to/private-config/devices
+./scripts/verify-device-configs.sh --config-root "$ARCP_CONFIG_ROOT"
+./scripts/sync-build-deploy.sh check --profile phone --serial <adb-serial>
+```
+
+Each profile is named by `profile.json` and validated against
+[`config/arcp-device-profile.schema.json`](config/arcp-device-profile.schema.json). Relative adapter paths are
+canonicalized below the selected profile; traversal and symlinks at secret-consuming paths are rejected. Plaintext
+credentials, Terraform state, browser state, signing material and generated artifacts must remain ignored in the
+private repository.
+
+Enable the versioned local pre-push guard once per checkout:
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 Routine builds and releases use [`scripts/arcp`](scripts/arcp). The lower-level guarded delivery implementation is
 [`scripts/sync-build-deploy.sh`](scripts/sync-build-deploy.sh): its `sync` command fetches the official upstream and
 creates a review branch only when the selected upstream ref is not already integrated;
 `all` builds and deploys the already checked-out reviewed commit and never fetches or merges. Mutation commands
-require the literal `--apply` flag, an explicit device, matching device identity, a qualified local build manifest,
+require the literal `--apply` flag, an explicit profile, matching device identity, a qualified local build manifest,
 and matching installed/candidate signing certificates.
 
 Pinned native dependencies use the same entrypoint with explicit refs, for example
@@ -420,7 +414,7 @@ release branch implicitly. Installable channel builds require an explicit versio
 SHAs and an exact request ID. It builds both GMS and FOSS without secrets, runs the live ngrok test in a
 separate `arcp-live-tests` environment, and signs only after both gates pass. It publishes immutable namespaced tags;
 edge releases are GitHub pre-releases. Dry-run is the default and `--publish` is required for publication. Historical
-`upstream-*` mirror releases contain no local features and must not be installed on managed devices. See
+`upstream-*` mirror releases contain no local features and must not be used as fork releases. See
 [ARCP channel releases](docs/ARCP_CHANNEL_RELEASES.md).
 
 Every local build compiles the pinned host `cloudflared` into ignored `build/host-tools/` and adds it to the test
@@ -429,19 +423,19 @@ Go or Maven is absent, the script extracts pinned toolchains from digest-pinned 
 ignored directory, so no system-wide installation is required (Docker is the fallback prerequisite).
 
 ```bash
-./scripts/sync-build-deploy.sh check --device [REDACTED_DEVICE_ALIAS] --serial <adb-serial>
+./scripts/sync-build-deploy.sh check --profile phone --config-root "$ARCP_CONFIG_ROOT" --serial <adb-serial>
 ./scripts/arcp build
 ./scripts/arcp build stable
 ./scripts/arcp build edge --variant fossDebug
 ./scripts/arcp release edge
 ./scripts/arcp release stable --publish
-./scripts/sync-build-deploy.sh all --device [REDACTED_DEVICE_ALIAS] --variant gmsRelease --serial <adb-serial> --apply
+./scripts/sync-build-deploy.sh all --profile phone --config-root "$ARCP_CONFIG_ROOT" --variant gmsRelease --serial <adb-serial> --apply
 ```
 
 Production and debug builds register exactly five reviewed Shizuku tools: `admin_get_top_window`, the standard visible
 `admin_request_shizuku_permission` flow, typed `admin_uninstall_app`, zero-argument `admin_unlock_device`, and
 zero-argument `admin_sleep_device`. The uninstall operation removes a package only
-for Android user 0 and rejects the MCP packages, Shizuku, Qustodio, active device administrators and other critical
+for Android user 0 and rejects the MCP packages, Shizuku, active device administrators and other critical
 system packages. The first three tools require the administrator bearer and reject OAuth clients such as ChatGPT.
 Remote unlock and sleep additionally accept only the exact OAuth client configured locally during encrypted
 provisioning. Sleep uses one fixed Android sleep key event and exposes neither a generic shell nor caller-controlled
@@ -457,27 +451,12 @@ mode; no upstream UI class or navigation route is modified.
 They use the existing per-tool `disabledTools` policy; no generic shell/settings interface is included. Shizuku
 activation and the first ordinary device unlock after a reboot remain manual administrator gates.
 
-Fork releases also install a private `com.mwodevelop.androidremotecontrolmcp.recovery` extension through a
+Fork releases also install a recovery extension through a
 non-exported manifest provider. Without modifying upstream service classes, it probes the real loopback `/health`
 only while the Cloudflare tunnel reports connected, requires three consecutive failures, and shares a persistent
 two-restarts-per-ten-minutes circuit breaker with bounded exit diagnostics. It never exposes a restart or failure
-injection MCP tool and never revives an explicit user stop. The [REDACTED_DEVICE_ALIAS]-first rollout of `1.12.0-dev.82+f7ff992`, followed
-by the identical APK on [REDACTED_DEVICE_ALIAS], completed 15-minute screen-off/Doze endpoint soaks with 30/30 successful
-`200/200/401` samples on each device. Device-specific exceptions and rollback evidence are recorded in the two
-`myconf/*/README.md` runbooks.
-
-The isolated [REDACTED_DEVICE_ALIAS] debug POC on loopback port `8081` is historical/test tooling and is not a rollout tier. Its package
-and ADB forward were removed after the owner-signed production acceptance on 2026-08-27. For a future local-only
-regression proof:
-
-```bash
-ANDROID_HOME=<android-sdk> ./scripts/deploy-[REDACTED_DEVICE_ALIAS]-debug-poc.sh --serial <adb-serial> --apply
-```
-
-See [Plan 66](docs/plans/66_shizuku_privileged_admin_tools_and_device_delivery_20260827142719.md) for the reviewed
-architecture, direct [REDACTED_DEVICE_ALIAS] production path, deferred broad capabilities, signing migration and acceptance gates.
-
-The device-specific `README.md` files are the operational runbooks. Snapshot status is historical; use each device's `scripts/verify.sh --live` before treating an endpoint or connector as currently available.
+injection MCP tool and never revives an explicit user stop. Device-specific rollout evidence and operational runbooks
+belong only in the private configuration repository.
 
 ---
 

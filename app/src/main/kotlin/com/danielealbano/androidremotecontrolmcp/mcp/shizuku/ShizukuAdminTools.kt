@@ -137,8 +137,9 @@ class UninstallApplicationAdminHandler
                 description =
                     "Uninstalls one validated application for Android user 0 through Shizuku. " +
                         "For a preinstalled system application this removes it only for that user, not from the " +
-                        "system partition. Critical packages, Shizuku, Qustodio, the MCP app, active device " +
-                        "administrators and the launcher are denied. Requires the primary administrator bearer; " +
+                        "system partition. Critical packages, Shizuku, the MCP app, active device " +
+                        "administrators, enabled accessibility services and the launcher are denied. " +
+                        "Requires the primary administrator bearer; " +
                         "OAuth clients are denied.",
                 inputSchema =
                     ToolSchema(

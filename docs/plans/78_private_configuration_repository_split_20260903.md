@@ -1,4 +1,4 @@
-<!-- PLANNED — independently reviewed; B1-B6 findings incorporated; not implemented or deployed. -->
+<!-- IMPLEMENTED — independently reviewed; B1-B6 findings incorporated; external resources and credentials were not rotated. -->
 <!-- Never copy plaintext credentials, real infrastructure identifiers, account emails, device endpoints or private topology into the public repository or its CI logs. -->
 
 # Plan 78 — split public ARCP code from private owner configuration

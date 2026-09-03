@@ -350,7 +350,7 @@ private fun ConnectionInfoCardPreview() {
     AndroidRemoteControlMcpTheme {
         ConnectionInfoCard(
             bindingAddress = BindingAddress.LOCALHOST,
-            ipAddress = "192.168.1.100",
+            ipAddress = "192.0.2.100",
             port = 8080,
             httpsEnabled = false,
             bearerToken = "a1b2c3d4-e5f6-7890-abcd-ef1234567890",

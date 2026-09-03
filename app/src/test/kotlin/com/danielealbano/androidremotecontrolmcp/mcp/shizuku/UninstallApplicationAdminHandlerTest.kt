@@ -59,16 +59,16 @@ class UninstallApplicationAdminHandlerTest {
     fun `protected package is denied before backend`() =
         runTest {
             val backend = FakeBackend()
-            val target = handler(backend, "Qustodio is protected")
+            val target = handler(backend, "an active device administrator is protected")
 
             val error =
                 assertThrows<McpToolException.PermissionDenied> {
                     withClient(McpAuthClientClass.STATIC_BEARER) {
-                        target.execute(arguments("com.qustodio.qustodioapp"))
+                        target.execute(arguments("com.example.deviceadmin"))
                     }
                 }
 
-            assertTrue(error.message.orEmpty().contains("Qustodio is protected"))
+            assertTrue(error.message.orEmpty().contains("an active device administrator is protected"))
             assertTrue(backend.packages.isEmpty())
         }
 
