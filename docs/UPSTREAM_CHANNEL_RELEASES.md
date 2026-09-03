@@ -128,4 +128,4 @@ remove those features. They may also be signature-incompatible with APKs signed 
 
 The app's updater currently reads the official upstream repository's `/releases/latest`, not releases in this fork.
 Mirror releases therefore cannot enter that updater stream; marking every mirror as a pre-release is an additional
-defense. Publication never installs an APK on [REDACTED_DEVICE_ALIAS], [REDACTED_DEVICE_ALIAS] or another device.
+defense. Publication never installs an APK on a managed device.
