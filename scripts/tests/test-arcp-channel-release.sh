@@ -149,7 +149,11 @@ test_workflow_contract() {
   [[ "$preview" == *'contents: read'* && "$preview" != *'contents: write'* ]]
   [[ "$reserve" == *'if: ${{ inputs.publish }}'* && "$reserve" == *'contents: write'* ]]
   [[ "$sign" == *'contents: read'* && "$sign" != *'contents: write'* ]]
-  [[ "$publish" == *'if: ${{ inputs.publish }}'* && "$publish" == *'contents: write'* ]]
+  [[ "$publish" == *'always() && inputs.publish'* &&
+     "$publish" == *"needs.resolve.result == 'success'"* &&
+     "$publish" == *"needs.reserve-version.result == 'success'"* &&
+     "$publish" == *"needs.sign.result == 'success'"* &&
+     "$publish" == *'contents: write'* ]]
   ! grep -Fq 'sign-upstream-channel-release.sh' "$workflow"
   grep -Eq '^  workflow_dispatch:' "$legacy_workflow"
   ! grep -Eq '^  (push|schedule):' "$legacy_workflow"

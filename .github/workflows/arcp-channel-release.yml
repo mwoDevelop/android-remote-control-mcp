@@ -472,8 +472,14 @@ jobs:
 
   publish:
     name: Publish immutable release
-    if: ${{ inputs.publish }}
     needs: [resolve, reserve-version, sign]
+    # preview-version is intentionally skipped for a publication. Its skipped result is an
+    # ancestor of sign and can otherwise propagate through the implicit success() guard,
+    # causing this job to be skipped even though every direct publication dependency passed.
+    if: >-
+      ${{ always() && inputs.publish &&
+          needs.resolve.result == 'success' && needs.reserve-version.result == 'success' &&
+          needs.sign.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
