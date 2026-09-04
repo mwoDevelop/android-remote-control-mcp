@@ -1,5 +1,6 @@
 package com.danielealbano.androidremotecontrolmcp.integration
 
+import com.danielealbano.androidremotecontrolmcp.mcp.oauth.HostedOAuthRedirectExtensions
 import io.ktor.client.HttpClient
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get
@@ -201,6 +202,33 @@ class OAuthFlowIntegrationTest {
                     }
                 assertEquals(HttpStatusCode.Created, resp.status)
                 assertTrue(resp.bodyAsText().contains("https://chatgpt.com/connector/oauth/abc123"))
+            }
+        }
+
+    @Test
+    @DisplayName("Antigravity DCR to authorize to token to MCP and refresh succeeds")
+    fun antigravityFullDanceAndRefreshSucceeds() =
+        runTest {
+            val deps = McpIntegrationTestHelper.createMockDependencies()
+            coEvery { deps.actionExecutor.tap(any(), any()) } returns Result.success(Unit)
+            McpIntegrationTestHelper.withOAuthTestApplication(deps = deps, publicUrlOverride = OVERRIDE) { ctx ->
+                val redirectUri = HostedOAuthRedirectExtensions.ANTIGRAVITY_REDIRECT_URI
+                val clientId = register(client, redirectUri)
+                val tokens = danceToTokens(ctx, clientId, includeResource = true, redirectUri = redirectUri)
+
+                val mcpClient = connectMcp(tokens.access)
+                try {
+                    val result = mcpClient.callTool(name = "android_tap", arguments = mapOf("x" to 1, "y" to 1))
+                    assertNotEquals(true, result.isError)
+                } finally {
+                    mcpClient.close()
+                }
+
+                val refreshed = refreshRequest(client, clientId, tokens.refresh)
+                assertEquals(HttpStatusCode.OK, refreshed.status)
+                val reused = refreshRequest(client, clientId, tokens.refresh)
+                assertEquals(HttpStatusCode.BadRequest, reused.status)
+                assertTrue(reused.bodyAsText().contains("invalid_grant"))
             }
         }
 
@@ -538,8 +566,13 @@ class OAuthFlowIntegrationTest {
         ctx: McpIntegrationTestHelper.OAuthTestContext,
         clientId: String,
         includeResource: Boolean,
+        redirectUri: String = REDIRECT,
     ): String {
-        authorize(ctx.httpClient, clientId, AuthorizeOptions(includeResource = includeResource))
+        authorize(
+            ctx.httpClient,
+            clientId,
+            AuthorizeOptions(redirectUri = redirectUri, includeResource = includeResource),
+        )
         val approval =
             ctx.approvalCoordinator
                 .observePending()
@@ -552,16 +585,27 @@ class OAuthFlowIntegrationTest {
                 .parseToJsonElement(status.bodyAsText())
                 .jsonObject["redirect"]!!
                 .jsonPrimitive.content
-        return Url(redirect).parameters["code"]!!
+        val callback = Url(redirect)
+        assertEquals("xyz", callback.parameters["state"])
+        return callback.parameters["code"]!!
     }
 
     private suspend fun danceToTokens(
         ctx: McpIntegrationTestHelper.OAuthTestContext,
         clientId: String,
         includeResource: Boolean,
+        redirectUri: String = REDIRECT,
     ): Tokens {
-        val code = danceToCode(ctx, clientId, includeResource)
-        val resp = tokenRequest(ctx.httpClient, clientId, code, verifier = VERIFIER, includeResource = includeResource)
+        val code = danceToCode(ctx, clientId, includeResource, redirectUri)
+        val resp =
+            tokenRequest(
+                ctx.httpClient,
+                clientId,
+                code,
+                verifier = VERIFIER,
+                includeResource = includeResource,
+                redirectUri = redirectUri,
+            )
         assertEquals(HttpStatusCode.OK, resp.status)
         val obj = Json.parseToJsonElement(resp.bodyAsText()).jsonObject
         return Tokens(obj["access_token"]!!.jsonPrimitive.content, obj["refresh_token"]!!.jsonPrimitive.content)
@@ -573,6 +617,7 @@ class OAuthFlowIntegrationTest {
         code: String,
         verifier: String,
         includeResource: Boolean,
+        redirectUri: String = REDIRECT,
     ): HttpResponse =
         client.post("/token") {
             setBody(
@@ -580,7 +625,7 @@ class OAuthFlowIntegrationTest {
                     Parameters.build {
                         append("grant_type", "authorization_code")
                         append("code", code)
-                        append("redirect_uri", REDIRECT)
+                        append("redirect_uri", redirectUri)
                         append("client_id", clientId)
                         append("code_verifier", verifier)
                         if (includeResource) append("resource", CANONICAL)
