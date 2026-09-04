@@ -88,6 +88,15 @@
       "tests": [
         "shizuku-admin/src/test/kotlin/com/mwodevelop/androidremotecontrol/shizukuadmin/RemoteUnlockAdminManifestTest.kt"
       ]
+    },
+    {
+      "id": "antigravity_oauth_redirect",
+      "canonical_commit": "0b26ce1",
+      "implementation": "app/src/main/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/oauth/HostedOAuthRedirectExtensions.kt",
+      "tests": [
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/mcp/oauth/OAuthPolicyTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/integration/OAuthFlowIntegrationTest.kt"
+      ]
     }
   ],
   "channel_adapters": {
