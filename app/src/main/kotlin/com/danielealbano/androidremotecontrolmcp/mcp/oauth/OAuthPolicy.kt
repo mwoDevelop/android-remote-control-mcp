@@ -52,15 +52,16 @@ object OAuthPolicy {
     private val LOOPBACK_HOSTS = setOf("localhost", "127.0.0.1", "::1")
 
     /**
-     * CLOSED redirect policy (the security boundary). Returns true ONLY for a URI in [ALLOWED_REDIRECT_URIS],
-     * ChatGPT's HTTPS callback namespace on the EXACT `chatgpt.com` host (path under `/connector/oauth/`), or
+     * CLOSED redirect policy (the security boundary). Returns true ONLY for a URI in [ALLOWED_REDIRECT_URIS], an
+     * exact compile-time [HostedOAuthRedirectExtensions] URI, ChatGPT's HTTPS callback namespace on the EXACT
+     * `chatgpt.com` host (path under `/connector/oauth/`), or
      * `http://` loopback (`localhost` / `127.0.0.1` / `[::1]`, any/no port) for local test clients
      * (MCP Inspector / mcp-remote / Claude Code). The host is compared via [URI.host] for EXACT equality —
      * deceptive hosts (`localhost.evil.com`, `chatgpt.com.evil.example`, `localhost@evil.com`), other loopback
      * IPs, `0.0.0.0`, non-`https` ChatGPT callbacks, and any other https host are rejected.
      */
     fun isAllowedRedirectUri(uri: String): Boolean {
-        if (uri in ALLOWED_REDIRECT_URIS) return true
+        if (uri in ALLOWED_REDIRECT_URIS || HostedOAuthRedirectExtensions.isAllowed(uri)) return true
 
         val parsed = runCatching { URI(uri) }.getOrNull()
         val host = parsed?.host?.removePrefix("[")?.removeSuffix("]")

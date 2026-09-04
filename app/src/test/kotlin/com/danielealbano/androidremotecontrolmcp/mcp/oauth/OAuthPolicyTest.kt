@@ -12,6 +12,7 @@ class OAuthPolicyTest {
     fun allowsAllowlistedAndLoopback() {
         assertTrue(OAuthPolicy.isAllowedRedirectUri(OAuthPolicy.CLAUDE_REDIRECT_URI))
         assertTrue(OAuthPolicy.isAllowedRedirectUri(OAuthPolicy.CHATGPT_REDIRECT_URI))
+        assertTrue(OAuthPolicy.isAllowedRedirectUri(HostedOAuthRedirectExtensions.ANTIGRAVITY_REDIRECT_URI))
         OAuthPolicy.ALLOWED_REDIRECT_URIS.forEach { assertTrue(OAuthPolicy.isAllowedRedirectUri(it)) }
         assertTrue(OAuthPolicy.isAllowedRedirectUri("https://chatgpt.com/connector/oauth/abc123"))
         assertTrue(OAuthPolicy.isAllowedRedirectUri("http://localhost/callback"))
@@ -35,6 +36,24 @@ class OAuthPolicyTest {
         assertFalse(OAuthPolicy.isAllowedRedirectUri("https://chatgpt.com@evil.com/connector/oauth/abc"))
         assertFalse(OAuthPolicy.isAllowedRedirectUri("https://chatgpt.com/evil/oauth/abc"))
         assertFalse(OAuthPolicy.isAllowedRedirectUri("http://chatgpt.com/connector/oauth/abc"))
+    }
+
+    @Test
+    @DisplayName("accepts only the exact Antigravity hosted callback")
+    fun acceptsOnlyExactAntigravityCallback() {
+        assertTrue(OAuthPolicy.isAllowedRedirectUri(HostedOAuthRedirectExtensions.ANTIGRAVITY_REDIRECT_URI))
+        listOf(
+            "http://antigravity.google/oauth-callback",
+            "https://evil.antigravity.google/oauth-callback",
+            "https://antigravity.google.evil.example/oauth-callback",
+            "https://user@antigravity.google/oauth-callback",
+            "https://antigravity.google/oauth-callback/",
+            "https://antigravity.google:443/oauth-callback",
+            "https://antigravity.google/oauth-callback?next=evil",
+            "https://antigravity.google/oauth-callback#fragment",
+            "https://antigravity.google/oauth-%63allback",
+            "https://ANTIGRAVITY.google/oauth-callback",
+        ).forEach { assertFalse(OAuthPolicy.isAllowedRedirectUri(it), it) }
     }
 
     @Test
