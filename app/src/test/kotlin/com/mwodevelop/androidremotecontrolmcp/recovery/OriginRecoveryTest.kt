@@ -1,5 +1,6 @@
 package com.mwodevelop.androidremotecontrolmcp.recovery
 
+import com.danielealbano.androidremotecontrolmcp.data.model.ServerStatus
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -38,6 +39,18 @@ class OriginRecoveryPolicyTest {
         assertFalse(policy.onProbe(OriginProbeResult.CONNECTION))
         assertFalse(policy.onProbe(OriginProbeResult.CONNECTION))
         assertTrue(policy.onProbe(OriginProbeResult.CONNECTION))
+    }
+}
+
+class SupervisedOriginPortTest {
+    @Test
+    fun `supervises only a running plain-http generation`() {
+        val running = ServerStatus.Running(port = 8765, bindingAddress = "127.0.0.1")
+
+        assertEquals(8765, supervisedOriginPort(running, activeHttpsEnabled = false))
+        assertEquals(null, supervisedOriginPort(running, activeHttpsEnabled = true))
+        assertEquals(null, supervisedOriginPort(running, activeHttpsEnabled = null))
+        assertEquals(null, supervisedOriginPort(ServerStatus.Stopped, activeHttpsEnabled = false))
     }
 }
 
