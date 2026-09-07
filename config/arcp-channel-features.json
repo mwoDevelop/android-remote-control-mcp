@@ -65,11 +65,12 @@
     },
     {
       "id": "mcp_origin_recovery",
-      "canonical_commit": "f7ff992",
-      "implementation": "app/src/main/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/RecoveryCoordinator.kt",
+      "canonical_commit": "20e16812",
+      "implementation": "app/src/main/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/McpOriginRecoveryProvider.kt",
       "tests": [
         "app/src/test/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/OriginRecoveryTest.kt",
-        "app/src/test/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/RecoveryCoordinatorTest.kt"
+        "app/src/test/kotlin/com/mwodevelop/androidremotecontrolmcp/recovery/RecoveryCoordinatorTest.kt",
+        "app/src/test/kotlin/com/danielealbano/androidremotecontrolmcp/manifest/ExportedComponentsManifestTest.kt"
       ]
     },
     {
