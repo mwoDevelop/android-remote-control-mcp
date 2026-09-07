@@ -124,6 +124,20 @@ class RecoveryCoordinatorTest {
     }
 
     @Test
+    fun `snapshot reports shared persistent budget without consuming it`() {
+        val state = MemoryState()
+        val breaker = RecoveryCircuitBreaker(state, nowMs = { 2_000L })
+        assertTrue(breaker.tryAcquire())
+
+        val snapshot = breaker.snapshot()
+
+        assertEquals(2_000L, snapshot.windowStartedAtMs)
+        assertEquals(1, snapshot.restartCount)
+        assertEquals(RECOVERY_MAX_RESTARTS, snapshot.maxRestarts)
+        assertEquals(1, breaker.snapshot().restartCount)
+    }
+
+    @Test
     fun `persisted intent timeout fails closed`() {
         val repository = mockk<SettingsRepository>()
         every { repository.serverRunning } returns flow { awaitCancellation() }

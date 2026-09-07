@@ -156,11 +156,12 @@
             android:exported="true"
             android:permission="android.permission.DUMP" />
 
-        <!-- Fork-owned OCP extension: observes the MCP origin without modifying upstream service classes. -->
+        <!-- Fork-owned OCP extension: initializes recovery and exposes an adb-shell-only control API. -->
         <provider
             android:name="com.mwodevelop.androidremotecontrolmcp.recovery.McpOriginRecoveryProvider"
             android:authorities="${applicationId}.mcp-origin-recovery"
-            android:exported="false"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
             android:initOrder="100" />
 
         <!-- Event Channel Service -->
