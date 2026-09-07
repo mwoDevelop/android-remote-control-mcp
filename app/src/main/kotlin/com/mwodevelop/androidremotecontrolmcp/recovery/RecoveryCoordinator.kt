@@ -47,6 +47,13 @@ internal interface RecoveryStateStore {
     fun clear()
 }
 
+internal data class RecoveryBudgetSnapshot(
+    val windowStartedAtMs: Long,
+    val restartCount: Int,
+    val healthySinceMs: Long,
+    val maxRestarts: Int,
+)
+
 internal class SharedPreferencesRecoveryStateStore(
     private val preferences: SharedPreferences,
 ) : RecoveryStateStore {
@@ -108,6 +115,15 @@ internal class RecoveryCircuitBreaker(
         state.healthySinceMs = 0L
         return true
     }
+
+    @Synchronized
+    fun snapshot(): RecoveryBudgetSnapshot =
+        RecoveryBudgetSnapshot(
+            windowStartedAtMs = state.windowStartedAtMs,
+            restartCount = state.restartCount,
+            healthySinceMs = state.healthySinceMs,
+            maxRestarts = maxRestarts,
+        )
 }
 
 /**
@@ -162,6 +178,8 @@ internal class RecoveryCoordinator(
     fun markHealthy() = circuitBreaker.markHealthy()
 
     fun markUnhealthy() = circuitBreaker.markUnhealthy()
+
+    fun budgetSnapshot(): RecoveryBudgetSnapshot = circuitBreaker.snapshot()
 }
 
 /** Process-wide Android adapter; delayed restart survives destruction of a Service instance. */
@@ -197,6 +215,9 @@ internal object McpRecoveryRuntime {
 
     @Synchronized
     fun markUnhealthy(context: Context) = coordinator(context).markUnhealthy()
+
+    @Synchronized
+    fun budgetSnapshot(context: Context): RecoveryBudgetSnapshot = coordinator(context).budgetSnapshot()
 
     @Synchronized
     fun schedule(
