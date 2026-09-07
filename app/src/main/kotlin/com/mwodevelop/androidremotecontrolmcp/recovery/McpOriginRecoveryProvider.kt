@@ -173,6 +173,7 @@ internal interface RecoveryRuntimeGateway {
 private class AndroidRecoveryRuntimeGateway(
     private val context: Context,
 ) : RecoveryRuntimeGateway {
+    @Suppress("MaxLineLength")
     override fun beginGeneration(explicitStart: Boolean): Long = McpRecoveryRuntime.beginGeneration(context, explicitStart)
 
     override fun invalidate() = McpRecoveryRuntime.invalidate(context)
