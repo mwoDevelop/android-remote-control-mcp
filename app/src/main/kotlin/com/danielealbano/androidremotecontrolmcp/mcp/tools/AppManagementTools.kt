@@ -269,7 +269,11 @@ fun registerAppManagementTools(
     toolNamePrefix: String,
     perms: ToolPermissionsConfig,
 ) {
-    if (perms.isToolEnabled(OpenAppHandler.TOOL_NAME)) OpenAppHandler(appManager).register(registrar, toolNamePrefix)
+    if (perms.isToolEnabled(OpenAppHandler.TOOL_NAME)) {
+        com.mwodevelop.androidremotecontrolmcp.apps
+            .VerifiedOpenAppHandler(appManager)
+            .register(registrar, toolNamePrefix)
+    }
     if (perms.isToolEnabled(ListAppsHandler.TOOL_NAME)) {
         ListAppsHandler(appManager, privacyToolGate).register(registrar, toolNamePrefix)
     }

@@ -39,7 +39,8 @@ class AppManagementToolsIntegrationTest {
                     )
                 assertNotEquals(true, result.isError)
                 val text = (result.content[0] as TextContent).text
-                assertTrue(text.contains("launched successfully"))
+                // The mock launch accepts the intent; it cannot prove a real Android foreground window.
+                assertTrue(text.contains("launch_requested_unconfirmed"))
             }
         }
 

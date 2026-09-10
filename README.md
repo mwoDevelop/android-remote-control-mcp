@@ -458,6 +458,10 @@ two-restarts-per-ten-minutes circuit breaker with bounded exit diagnostics. It n
 injection MCP tool and never revives an explicit user stop. Device-specific rollout evidence and operational runbooks
 belong only in the private configuration repository.
 
+The owner `open_app` handler now distinguishes an accepted launch request from
+confirmed foreground activation using a bounded accessibility observation, without
+additional privileges. See [the behavior and upstream integration boundary](docs/verified-app-activation.md).
+
 ---
 
 ## Configuration
